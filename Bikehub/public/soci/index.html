@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Bike4city – Area Soci</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    header {
+      padding: 0.9rem 1.1rem;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+    .subtitle {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+    a.back {
+      color: #9ca3af;
+      text-decoration: none;
+      font-size: 0.8rem;
+    }
+    a.back:hover {
+      text-decoration: underline;
+    }
+    .btn {
+      border-radius: 999px;
+      padding: 0.25rem 0.7rem;
+      border: 1px solid #4b5563;
+      background: #0f172a;
+      color: #e5e7eb;
+      cursor: pointer;
+      font-size: 0.8rem;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:hover {
+      background: #1f2937;
+    }
+    main {
+      padding: 1rem 1.1rem 1.4rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .grid {
+      display: grid;
+      gap: 0.9rem;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    }
+    .card {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid #1f2937;
+      padding: 0.9rem;
+      font-size: 0.86rem;
+    }
+    .card h2 {
+      margin: 0 0 0.35rem;
+      font-size: 0.95rem;
+    }
+    .muted {
+      color: #9ca3af;
+      font-size: 0.8rem;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      margin-top: 0.5rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+    }
+    .tessera {
+      margin-top: 0.6rem;
+      padding: 0.6rem 0.7rem;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0f766e, #22c55e);
+      color: white;
+      font-size: 0.82rem;
+    }
+    .tessera-id {
+      font-size: 0.75rem;
+      opacity: 0.9;
+    }
+    .tessera-label {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.7rem;
+      opacity: 0.9;
+    }
+    .tessera-name {
+      font-weight: 600;
+      margin: 0.2rem 0;
+    }
+    .tessera-meta {
+      font-size: 0.75rem;
+      opacity: 0.9;
+    }
+    .row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      main {
+        padding: 0.8rem;
+      }
+      .grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <a href="/" class="back">← Torna alla scelta aree</a>
+      <h1>Area Soci Bike4city</h1>
+      <div class="subtitle" id="socioSubtitle">
+        Qui in futuro vedrai la tua tessera digitale, il riepilogo dei pagamenti,
+        la bacheca e i giri in programma.
+      </div>
+    </div>
+    <div>
+      <button class="btn" id="btnLogout">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <h2>La mia tessera</h2>
+        <p class="muted">
+          Questa sezione mostrerà i dati reali presi da Firebase: nome, numero tessera,
+          scadenza, stato dei pagamenti e eventuali convenzioni attive.
+        </p>
+        <div class="tessera" id="tesseraCard">
+          <div class="tessera-label">Tessera Bike4city</div>
+          <div class="tessera-name" id="tesseraName">Nome Cognome Socio</div>
+          <div class="tessera-meta" id="tesseraMeta">
+            Scadenza: – · Stato: – 
+          </div>
+          <div class="tessera-id" id="tesseraId">
+            ID tessera: – 
+          </div>
+        </div>
+        <span class="tag">Collegata a Firestore (profilo socio)</span>
+      </section>
+
+      <section class="card">
+        <h2>Bacheca e giri</h2>
+        <p class="muted">
+          Qui arriveranno i messaggi pubblicati dall’associazione: giri, assemblee,
+          comunicazioni importanti, link a tracce GPX, documenti, ecc.
+          L’idea è che sia coerente con la bacheca dell’app Android.
+        </p>
+
+        <!-- Preview bacheca (ultimi messaggi) -->
+        <div id="boardPreview" style="margin-top:0.5rem;"></div>
+
+        <p class="muted" style="margin-top:0.6rem;">
+          Intanto puoi già iniziare a costruire e gestire i tuoi giri personali:
+        </p>
+
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <a href="planner-socio.html" class="btn">Apri il planner personale</a>
+          <a href="archivio.html" class="btn">Vai al mio archivio percorsi</a>
+          <a href="/bacheca.html" class="btn">Apri la bacheca completa</a>
+        </div>
+
+        <span class="tag">Bacheca condivisa con l’app (in sviluppo)</span>
+      </section>
+    </div>
+  </main>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyC6NH5_WRIBVdFWnATgAcjD4LRsdGni8XY",
+      authDomain: "bike4city-hub.firebaseapp.com",
+      projectId: "bike4city-hub",
+      storageBucket: "bike4city-hub.firebasestorage.app",
+      messagingSenderId: "562062788878",
+      appId: "1:562062788878:web:c97afb744793a44f80ef5f",
+      measurementId: "G-2NFLN6HMYW"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const btnLogout    = document.getElementById('btnLogout');
+    const tesseraName  = document.getElementById('tesseraName');
+    const tesseraMeta  = document.getElementById('tesseraMeta');
+    const tesseraId    = document.getElementById('tesseraId');
+    const socioSubtitle = document.getElementById('socioSubtitle');
+    const boardPreview = document.getElementById('boardPreview');
+
+    function escapeHtml(str){
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#039;");
+    }
+
+    function formatDate(d){
+      if (!d) return "";
+      const dd = String(d.getDate()).padStart(2,"0");
+      const mm = String(d.getMonth()+1).padStart(2,"0");
+      const yyyy = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2,"0");
+      const min = String(d.getMinutes()).padStart(2,"0");
+      return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+    }
+
+    function loadBoardPreview() {
+      if (!db || !boardPreview) return;
+
+      boardPreview.innerHTML = '<p class="muted">Carico i messaggi…</p>';
+
+      db.collection("board")
+        .orderBy("createdAt", "desc")
+        .limit(3)
+        .get()
+        .then(snap => {
+          if (snap.empty) {
+            boardPreview.innerHTML =
+              '<p class="muted">Nessun messaggio in bacheca al momento.</p>';
+            return;
+          }
+
+          let html = "";
+          snap.forEach(doc => {
+            const d = doc.data() || {};
+            const title = d.title || "(senza titolo)";
+            const body  = d.body  || "";
+            const when  = d.createdAt && d.createdAt.toDate
+              ? formatDate(d.createdAt.toDate())
+              : "";
+            html += `
+              <article style="margin-bottom:6px; padding:6px 8px; border-radius:10px; border:1px solid #1f2937; background:#020617;">
+                <div style="font-size:13px; font-weight:500; margin-bottom:2px;">
+                  ${escapeHtml(title)}
+                </div>
+                <div style="font-size:12px; color:#e5e7eb; margin-bottom:2px;">
+                  ${escapeHtml(body).slice(0,140)}${body.length>140 ? "…" : ""}
+                </div>
+                <div style="font-size:11px; color:#94a3b8;">
+                  ${when}
+                </div>
+              </article>
+            `;
+          });
+
+          boardPreview.innerHTML = html;
+        })
+        .catch(err => {
+          console.error("Errore caricamento bacheca:", err);
+          boardPreview.innerHTML =
+            '<p class="muted">Errore nel caricamento della bacheca.</p>';
+        });
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        window.location.href = "/login.html?target=soci";
+        return;
+      }
+
+      try {
+        const snap = await db.collection('users').doc(user.uid).get();
+        if (!snap.exists) {
+          window.location.href = "/login.html?target=soci";
+          return;
+        }
+        const data = snap.data();
+        const roleRaw = data.role || 'socio';
+        const role = typeof roleRaw === "string" ? roleRaw.toLowerCase() : "socio";
+
+        if (role !== 'socio' && role !== 'admin') {
+          window.location.href = "/login.html?target=soci";
+          return;
+        }
+
+        const nome = (data.nome || "").trim();
+        const cognome = (data.cognome || "").trim();
+        const fullName = (nome + " " + cognome).trim() || (user.email || "Socio Bike4city");
+
+        if (tesseraName) tesseraName.textContent = fullName;
+        if (tesseraMeta) {
+          const scad = data.tesseraScadenza || "–";
+          const stato = data.tesseraStato || "–";
+          tesseraMeta.textContent = `Scadenza: ${scad} · Stato: ${stato}`;
+        }
+        if (tesseraId) {
+          const idT = data.tessera || "–";
+          tesseraId.textContent = "ID tessera: " + idT;
+        }
+
+        if (role === 'admin' && socioSubtitle) {
+          socioSubtitle.textContent = "Sei admin Bike4city: qui vedi l’area soci, dalla dashboard puoi accedere agli strumenti di gestione.";
+        }
+
+        // carica preview bacheca dopo aver verificato l’utente
+        loadBoardPreview();
+
+      } catch (e) {
+        console.error("Errore ruolo socio:", e);
+        window.location.href = "/login.html?target=soci";
+      }
+    });
+
+    if (btnLogout) {
+      btnLogout.addEventListener('click', () => {
+        auth.signOut().then(() => {
+          window.location.href = "/login.html";
+        });
+      });
+    }
+  </script>
+</body>
+</html>

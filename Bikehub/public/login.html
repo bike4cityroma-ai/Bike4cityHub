@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Bike4city – Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:#020617;
+      color:#e5e7eb;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100vh;
+      padding:1rem;
+    }
+    .card{
+      background:#020617;
+      border-radius:20px;
+      border:1px solid #1f2937;
+      padding:1.2rem 1.4rem 1.5rem;
+      width:100%;
+      max-width:380px;
+      box-shadow:0 18px 40px rgba(15,23,42,0.7);
+    }
+    h1{
+      font-size:1.2rem;
+      margin:0 0 0.3rem;
+    }
+    .muted{
+      font-size:0.8rem;
+      color:#9ca3af;
+      margin-bottom:0.8rem;
+    }
+    label{
+      display:block;
+      font-size:0.8rem;
+      margin:0.4rem 0 0.2rem;
+    }
+    input{
+      width:100%;
+      padding:0.45rem 0.6rem;
+      border-radius:10px;
+      border:1px solid #374151;
+      background:#020617;
+      color:#e5e7eb;
+      font-size:0.86rem;
+    }
+    input:focus{
+      outline:none;
+      border-color:#0ea5e9;
+    }
+    button{
+      width:100%;
+      margin-top:0.9rem;
+      padding:0.5rem;
+      border-radius:999px;
+      border:1px solid #0ea5e9;
+      background:linear-gradient(180deg,#0ea5e9,#0369a1);
+      color:white;
+      font-size:0.9rem;
+      cursor:pointer;
+    }
+    button:disabled{
+      opacity:0.6;
+      cursor:default;
+    }
+    .error{
+      margin-top:0.5rem;
+      font-size:0.8rem;
+      color:#f97316;
+      min-height:1.1em;
+    }
+    .hint{
+      margin-top:0.8rem;
+      font-size:0.75rem;
+      color:#9ca3af;
+    }
+    a.back{
+      display:inline-block;
+      margin-bottom:0.6rem;
+      font-size:0.8rem;
+      color:#9ca3af;
+      text-decoration:none;
+    }
+    a.back:hover{text-decoration:underline;}
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <a href="/" class="back">← Torna alla scelta aree</a>
+  <h1>Accedi a Bike4city Hub</h1>
+  <div class="muted" id="targetHint"></div>
+
+  <label for="email">Email</label>
+  <input id="email" type="email" autocomplete="username" />
+
+  <label for="password">Password</label>
+  <input id="password" type="password" autocomplete="current-password" />
+
+  <button id="btnLogin">Entra</button>
+
+  <div class="error" id="error"></div>
+  <div class="hint">
+    Il tipo di accesso (socio / admin) dipende dal ruolo associato al tuo
+    account in Bike4city. Se vedi errori di permesso contatta la segreteria.
+  </div>
+</div>
+
+<!-- Firebase v8 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC6NH5_WRIBVdFWnATgAcjD4LRsdGni8XY",
+    authDomain: "bike4city-hub.firebaseapp.com",
+    projectId: "bike4city-hub",
+    storageBucket: "bike4city-hub.firebasestorage.app",
+    messagingSenderId: "562062788878",
+    appId: "1:562062788878:web:c97afb744793a44f80ef5f",
+    measurementId: "G-2NFLN6HMYW"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const emailEl = document.getElementById('email');
+  const passEl = document.getElementById('password');
+  const btnLogin = document.getElementById('btnLogin');
+  const errorEl = document.getElementById('error');
+  const targetHint = document.getElementById('targetHint');
+
+  const params = new URLSearchParams(window.location.search);
+  const target = params.get('target');
+
+  if (target === 'admin') {
+    targetHint.textContent = "Accesso destinato all’area amministrativa Bike4city.";
+  } else if (target === 'soci') {
+    targetHint.textContent = "Accesso destinato all’area Soci.";
+  } else {
+    targetHint.textContent = "Verrai reindirizzato automaticamente all’area corretta in base al tuo ruolo.";
+  }
+
+  function showError(msg){
+    errorEl.textContent = msg || "";
+  }
+
+  async function login() {
+    showError("");
+    btnLogin.disabled = true;
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+
+    if (!email || !password) {
+      showError("Inserisci email e password.");
+      btnLogin.disabled = false;
+      return;
+    }
+
+    try {
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      const user = cred.user;
+
+      const docRef = db.collection('users').doc(user.uid);
+      const snap = await docRef.get();
+      if (!snap.exists) {
+        showError("Il tuo account non è configurato in Bike4city. Contatta la segreteria.");
+        btnLogin.disabled = false;
+        return;
+      }
+
+      const data = snap.data();
+      if (data.attivo === false) {
+        showError("Il tuo account risulta disattivato.");
+        btnLogin.disabled = false;
+        return;
+      }
+
+      const role = data.role || 'socio';
+
+      if (role === 'admin') {
+        window.location.href = "/admin/";
+      } else {
+        window.location.href = "/soci/";
+      }
+
+    } catch (e) {
+      console.error(e);
+      if (e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+        showError("Credenziali non valide.");
+      } else {
+        showError("Errore accesso: " + e.message);
+      }
+      btnLogin.disabled = false;
+    }
+  }
+
+  btnLogin.addEventListener('click', login);
+  passEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      login();
+    }
+  });
+
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) return;
+    try {
+      const snap = await db.collection('users').doc(user.uid).get();
+      if (!snap.exists) return;
+      const role = snap.data().role || "socio";
+      if (role === "admin") {
+        window.location.href = "/admin/";
+      } else {
+        window.location.href = "/soci/";
+      }
+    } catch (e) {
+      console.error("Errore lettura ruolo:", e);
+    }
+  });
+</script>
+
+</body>
+</html>

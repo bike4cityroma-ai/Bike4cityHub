@@ -1,0 +1,24 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Tema Splash (mostrato all’avvio) -->
+    <style name="Theme.Bike4CityHub.Splash" parent="Theme.SplashScreen">
+        <!-- colore sfondo splash -->
+        <item name="windowSplashScreenBackground">@color/b4c_splash_bg</item>
+
+        <!-- logo/icone splash -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+
+        <!-- quanto grande appare -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/b4c_splash_bg</item>
+
+        <!-- dopo lo splash, passa al tema app -->
+        <item name="postSplashScreenTheme">@style/Theme.Bike4CityHub</item>
+    </style>
+
+    <!-- Tema App -->
+    <style name="Theme.Bike4CityHub" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/b4c_primary</item>
+        <item name="android:navigationBarColor">@color/b4c_primary</item>
+    </style>
+
+</resources>

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Bike4city Hub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #0f172a;
+      --card-bg: #ffffff;
+      --accent: #f97316;
+      --accent-soft: rgba(249, 115, 22, 0.08);
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border-soft: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #1e293b 0, #020617 50%, #000 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 960px;
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 24px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.9);
+      padding: 1.5rem 1.5rem 2rem;
+      backdrop-filter: blur(14px);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+      margin-bottom: 1.5rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+    }
+
+    .brand-logo {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      border: 2px solid rgba(248, 250, 252, 0.9);
+      background: conic-gradient(from 180deg, #22c55e, #f97316, #0ea5e9, #22c55e);
+      padding: 3px;
+    }
+
+    .brand-logo-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #ffffff, #e2e8f0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #0f172a;
+      font-size: 14px;
+      letter-spacing: 0.05em;
+    }
+
+    .brand-text h1 {
+      font-size: 1.3rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .brand-text p {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #94a3b8;
+    }
+
+    .tagline {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: #9ca3af;
+      text-align: right;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 1.5rem;
+    }
+
+    .intro {
+      padding-right: 0.5rem;
+    }
+
+    .intro h2 {
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .intro p {
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 0.7rem;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.4rem;
+    }
+
+    .chip {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: #e5e7eb;
+      background: rgba(15, 23, 42, 0.7);
+    }
+
+    .chip--accent {
+      border-color: rgba(248, 250, 252, 0.9);
+      background: rgba(248, 250, 252, 0.1);
+    }
+
+    .sections {
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .card {
+      background: #f9fafb;
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      padding: 1rem 1rem 1.1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .card-pill {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #f97316;
+      background: var(--accent-soft);
+      border-radius: 999px;
+      padding: 0.15rem 0.6rem;
+    }
+
+    .card-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .card-features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      margin: 0.3rem 0 0.65rem;
+    }
+
+    .card-feature {
+      font-size: 0.72rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      border: 1px dashed #cbd5e1;
+      color: #475569;
+      background: white;
+    }
+
+    .card a {
+      margin-top: auto;
+      align-self: flex-start;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      padding: 0.4rem 0.9rem;
+      border-radius: 999px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid #0f172a;
+      background: #0f172a;
+      color: #f9fafb;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+    }
+
+    .card a.secondary {
+      background: white;
+      color: #0f172a;
+      border-color: #cbd5e1;
+    }
+
+    .card a span.icon {
+      font-size: 1.05rem;
+    }
+
+    .card a:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.15);
+    }
+
+    footer {
+      margin-top: 1.4rem;
+      font-size: 0.75rem;
+      color: #9ca3af;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.18);
+      margin-right: 0.35rem;
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        padding: 1.2rem 1rem 1.5rem;
+      }
+
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.6rem;
+      }
+
+      .tagline {
+        text-align: left;
+      }
+
+      main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .intro {
+        padding-right: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="brand-logo">
+          <div class="brand-logo-inner">
+            HUB
+          </div>
+        </div>
+        <div class="brand-text">
+          <h1>Bike4city Hub</h1>
+          <p>Spazio digitale per soci e associazione</p>
+        </div>
+      </div>
+      <div class="tagline">
+        gestione soci · uscite · comunità
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <h2>Scegli da che parte vuoi entrare</h2>
+        <p>
+          Questo è il pannello unico di Bike4city. Da qui puoi accedere sia agli
+          strumenti interni dell’associazione, sia ai servizi dedicati ai soci:
+          tessera digitale, bacheca, giri in programma e comunicazioni.
+        </p>
+        <p>
+          Le due aree condividono gli stessi dati su Firebase, ma con permessi diversi:
+          chi amministra l’associazione vede strumenti di gestione, i soci vedono solo ciò
+          che li riguarda.
+        </p>
+        <div class="chips">
+          <span class="chip chip--accent">Un solo Hub</span>
+          <span class="chip">Area amministrativa Bike4city</span>
+          <span class="chip">Area Soci</span>
+          <span class="chip">Bacheca condivisa</span>
+          <span class="chip">Tessera & scadenze</span>
+        </div>
+      </section>
+
+      <section class="sections">
+        <!-- AREA AMMINISTRATIVA -->
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>Area amministrativa Bike4city</span>
+            </div>
+            <span class="card-pill">Board · Staff · Segreteria</span>
+          </div>
+          <p class="card-desc">
+            Strumenti per chi gestisce l’associazione: soci, quote, rinnovi, bacheca,
+            calendari delle uscite, comunicazioni ufficiali. In futuro qui potremo
+            aggiungere anche statistiche e report.
+          </p>
+          <div class="card-features">
+            <span class="card-feature">Gestione soci e tessere</span>
+            <span class="card-feature">Pubblicazione bacheca</span>
+            <span class="card-feature">Uscite ed eventi</span>
+            <span class="card-feature">Comunicazioni ai soci</span>
+          </div>
+          <a href="/login.html?target=admin">
+            <span class="icon">↳</span>
+            Entra nell’area Bike4city
+          </a>
+        </article>
+
+        <!-- AREA SOCI -->
+        <article class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>Area Soci</span>
+            </div>
+            <span class="card-pill">Soci Bike4city</span>
+          </div>
+          <p class="card-desc">
+            Spazio personale del socio: tessera digitale, stato delle quote, bacheca,
+            uscite in programma, materiali riservati. È l’interfaccia che useranno i soci
+            sia da web che, in parallelo, dall’app Android.
+          </p>
+          <div class="card-features">
+            <span class="card-feature">La mia tessera</span>
+            <span class="card-feature">Bacheca soci</span>
+            <span class="card-feature">Giri e calendari</span>
+            <span class="card-feature">Dati personali</span>
+          </div>
+          <a class="secondary" href="/login.html?target=soci">
+            <span class="icon">🚲</span>
+            Entra nell’area Soci
+          </a>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <div>
+        <span class="status-dot"></span>
+        Hosting Firebase attivo · struttura base pronta
+      </div>
+      <div>
+        Accesso unico con ruoli socio/admin gestiti da Firestore.
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "562062788878",
+    "project_id": "bike4city-hub",
+    "storage_bucket": "bike4city-hub.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:562062788878:android:fa9ae57c728698a380ef5f",
+        "android_client_info": {
+          "package_name": "it.bike4city.hub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBic7Znsk5wB3Ts5ft-V2dTpgCaAD2QUyo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

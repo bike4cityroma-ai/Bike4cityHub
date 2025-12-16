@@ -1,0 +1,1817 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike4city – Planner percorsi</title>
+
+  <!-- Leaflet & plugin base -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+
+  <style>
+    :root{
+      --bg:#0f172a;
+      --panel:#111827;
+      --muted:#94a3b8;
+      --accent:#06b6d4;
+      --text:#e5e7eb;
+      --accent-soft:rgba(56,189,248,0.15);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,"Noto Sans";
+      color:var(--text);
+      background:var(--bg);
+    }
+
+    #app-container{
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .app-header{
+      padding:10px 16px;
+      border-bottom:1px solid #1f2937;
+      background:radial-gradient(circle at top,#1e293b 0,#020617 52%);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+    }
+    .app-header-left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .back-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:28px;
+      height:28px;
+      border-radius:999px;
+      border:1px solid #1f2937;
+      text-decoration:none;
+      color:var(--muted);
+      font-size:18px;
+      line-height:1;
+    }
+    .back-link:hover{
+      border-color:var(--accent);
+      color:var(--accent);
+      background:rgba(15,23,42,0.85);
+    }
+    .app-title{
+      margin:0;
+      font-size:18px;
+      font-weight:600;
+      letter-spacing:0.03em;
+      text-transform:uppercase;
+    }
+    .app-subtitle{
+      display:block;
+      margin-top:4px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .app-header-right{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    /* LAYOUT A DUE PANNELLI COME L’ORIGINALE */
+    .app{
+      display:flex;
+      height:calc(100vh - 56px); /* header ~56px */
+    }
+
+    .side{
+      width:360px;
+      max-width:45vw;
+      background:#111827;
+      border-right:1px solid #1f2937;
+      padding:16px;
+      overflow:auto;
+      display:flex;
+      flex-direction:column;
+    }
+
+    #map{
+      flex:1;
+      background:#020617;
+    }
+
+    h1{ font-size:18px; margin:0; }
+    .sub{ color:var(--muted); font-size:12px; margin-bottom:12px; }
+
+    .control{
+      margin-bottom:10px;
+      font-size:13px;
+    }
+    .control label{
+      font-weight:500;
+      display:block;
+      margin-bottom:4px;
+    }
+    .muted{ color:var(--muted); font-size:12px; }
+
+    .stack{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+    }
+
+    .tag{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      font-size:12px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid #374151;
+      background:#020617;
+    }
+    .tag input[type="radio"],
+    .tag input[type="checkbox"]{
+      transform:scale(0.9);
+    }
+
+    input[type="range"]{ width:100%; }
+    input[type="number"]{
+      width:90px;
+      padding:6px 8px;
+      border-radius:10px;
+      border:1px solid #374151;
+      background:#0b1220;
+      color:var(--text);
+    }
+    input[type="text"], textarea, select{
+      width:100%;
+      padding:8px;
+      border-radius:10px;
+      border:1px solid #374151;
+      background:#0b1220;
+      color:var(--text);
+      font-size:12px;
+    }
+    textarea{ resize:vertical; min-height:48px; }
+
+    .btn{
+      display:inline-block;
+      padding:8px 12px;
+      border-radius:12px;
+      border:1px solid #334155;
+      background:#0b1220;
+      color:#e2e8f0;
+      cursor:pointer;
+      user-select:none;
+      font-size:12px;
+    }
+    .btn.primary{
+      background:linear-gradient(135deg,#06b6d4,#22c55e);
+      color:#0f172a;
+      border:none;
+      font-weight:600;
+    }
+    .btn:disabled{
+      opacity:0.5;
+      cursor:not-allowed;
+    }
+
+    .row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .info-bar{
+      padding:6px 10px;
+      border-radius:999px;
+      background:#020617;
+      border:1px solid #1f2937;
+      font-size:12px;
+      color:var(--muted);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .pill{
+      font-size:11px;
+      padding:3px 8px;
+      border-radius:999px;
+      background:rgba(15,23,42,0.8);
+      border:1px solid #334155;
+    }
+
+    .divider{
+      height:1px;
+      border:none;
+      background:#1f2937;
+      margin:10px 0;
+    }
+
+    .metrics{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+    .chip{
+      background:#0b1220;
+      border:1px solid #334155;
+      border-radius:999px;
+      padding:3px 8px;
+      font-size:11px;
+    }
+
+    @media (max-width:768px){
+      .app{
+        flex-direction:column;
+        height:auto;
+      }
+      .side{
+        width:100%;
+        max-width:100%;
+        border-right:none;
+        border-bottom:1px solid #1f2937;
+      }
+      #map{
+        height:60vh;
+      }
+      .app-header{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div id="app-container">
+  <header class="app-header">
+    <div class="app-header-left">
+      <a href="/admin/" class="back-link" title="Torna all’area admin">←</a>
+      <div>
+        <h1 class="app-title">Bike4city – Planner percorsi</h1>
+        <span class="app-subtitle">
+          Crea anelli, itinerari A→B e anelli tematici cicloturistici sui POI.
+        </span>
+      </div>
+    </div>
+    <div class="app-header-right">
+      Il salvataggio su Bike4city richiede un utente autenticato.
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="side">
+      <div class="info-bar">
+        <span id="info">1) Clicca sulla mappa per la partenza • 2) Regola i parametri • 3) Genera il percorso.</span>
+        <span class="pill">Planner interno sperimentale</span>
+      </div>
+
+      <!-- Modalità -->
+      <div class="control">
+        <label>Modalità percorso</label>
+        <div class="stack">
+          <label class="tag">
+            <input type="radio" name="routeMode" value="loop" checked />
+            Anello automatico
+          </label>
+          <label class="tag">
+            <input type="radio" name="routeMode" value="ab" />
+            Da A a B (con tappe)
+          </label>
+        </div>
+        <div class="muted" id="modeHint">
+          In modalità anello il sistema genera un giro chiuso attorno al punto di partenza.
+        </div>
+      </div>
+
+      <!-- Controlli A→B -->
+      <div id="abControls" class="control" style="display:none;">
+        <div class="stack">
+          <button class="btn" id="btnSetStart">Imposta partenza (A)</button>
+          <button class="btn" id="btnAddVia">Aggiungi tappa intermedia</button>
+          <button class="btn" id="btnSetEnd">Imposta arrivo (B)</button>
+        </div>
+        <div class="muted" id="abStatus"></div>
+      </div>
+
+      <!-- Profilo bici -->
+      <div class="control">
+        <label>Profilo bici</label>
+        <select id="profileSelect">
+          <option value="cycling-regular">Cicloturismo / urbano misto</option>
+          <option value="cycling-road">Bici da strada / asfalto</option>
+          <option value="cycling-mountain">Gravel / MTB</option>
+        </select>
+        <div class="muted">
+          Il profilo incide su tipo di strade preferite (più o meno trafficate, più o meno sterrato).
+        </div>
+      </div>
+
+      <!-- Distanza target -->
+      <div class="control">
+        <label>Distanza target (km): <span id="kmOut">30</span></label>
+        <input id="km" type="range" min="10" max="120" value="30" step="5" />
+      </div>
+
+      <!-- Raggio POI -->
+      <div class="control">
+        <label>Raggio per cercare POI (km): <span id="radiusOut">15</span></label>
+        <input id="radius" type="range" min="1" max="30" value="15" step="1" />
+      </div>
+
+      <!-- POI base -->
+      <div class="control">
+        <label>POI (facoltativi)</label>
+        <div class="stack">
+          <label class="tag"><input type="checkbox" id="poi_cafe" /> bar/caffè</label>
+          <label class="tag"><input type="checkbox" id="poi_water" /> fontanelle</label>
+          <label class="tag"><input type="checkbox" id="poi_bikeshop" /> negozi bici</label>
+          <label class="tag"><input type="checkbox" id="poi_repair" /> stazioni riparazione</label>
+        </div>
+      </div>
+
+      <!-- Evita -->
+      <div class="control">
+        <label>Evita (ove possibile)</label>
+        <div class="stack">
+          <label class="tag"><input type="checkbox" id="avoid_ferries" checked /> traghetti</label>
+          <label class="tag"><input type="checkbox" id="avoid_fords" checked /> guadi</label>
+          <label class="tag"><input type="checkbox" id="avoid_steps" checked /> scale</label>
+        </div>
+      </div>
+
+      <!-- Rete ciclabile -->
+      <div class="control">
+        <label>Rete ciclabile (sperimentale)</label>
+        <label class="tag" style="margin-top:4px; display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="showCycleways" />
+          Mostra tratti ciclabili OSM nell'area visibile
+        </label>
+        <div class="muted">
+          I dati provengono da OpenStreetMap; il caricamento può richiedere qualche secondo nelle zone più dense.
+        </div>
+      </div>
+
+      <!-- ANELLI TEMATICI -->
+      <div class="control">
+        <label>Anelli tematici sui POI</label>
+        <select id="thematicCategory">
+          <option value="">Seleziona categoria...</option>
+          <option value="cafe_water">Caffè & fontanelle</option>
+          <option value="parks_nature">Parchi & natura</option>
+          <option value="culture_history">Storia & cultura</option>
+          <option value="bike_world">Mondo bici</option>
+        </select>
+        <div class="row" style="margin-top:4px;">
+          <span class="muted">Max POI da includere:</span>
+          <input id="thematicMaxPoi" type="number" min="2" max="12" value="6" />
+        </div>
+        <button class="btn" id="btnThematicLoop" style="margin-top:6px;">
+          Crea anello tematico sui POI
+        </button>
+        <div class="muted">
+          Usa il raggio impostato sopra. Verrà creato un anello che collega i POI selezionati e torna alla partenza.
+        </div>
+      </div>
+
+      <!-- Bottoni principali -->
+      <div class="control row">
+        <button class="btn" id="btnPOI">Trova POI</button>
+        <button class="btn" id="btnEditRoute">Modifica percorso</button>
+        <button class="btn primary" id="btnLoop">Crea anello</button>
+      </div>
+
+      <!-- Export GPX -->
+      <div class="control">
+        <button class="btn" id="btnExport" disabled>Esporta GPX</button>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- Dati percorso per Bike4city -->
+      <div class="control">
+        <label for="routeTitle">Titolo percorso</label>
+        <input id="routeTitle" type="text" placeholder="Es. Anello Appia Antica, Lungotevere + parchi, ecc." />
+      </div>
+
+      <div class="control">
+        <label for="routeDescription">Descrizione</label>
+        <textarea id="routeDescription" placeholder="Note su fondo, traffico, punti acqua, panorami, criticità..."></textarea>
+      </div>
+
+      <div class="control">
+        <label for="routeDifficulty">Difficoltà complessiva</label>
+        <select id="routeDifficulty">
+          <option value="">Seleziona...</option>
+          <option value="easy">Facile</option>
+          <option value="moderate">Media</option>
+          <option value="hard">Impegnativa</option>
+          <option value="epic">Molto impegnativa / epica</option>
+        </select>
+        <div class="muted" id="difficultyHint">
+          Verrà suggerita automaticamente in base a km e dislivello, ma puoi correggerla.
+        </div>
+      </div>
+
+      <div class="control">
+        <label for="routeType">Tipologia percorso</label>
+        <select id="routeType">
+          <option value="">Seleziona...</option>
+          <option value="urban_commute">Urbano quotidiano / commuting</option>
+          <option value="urban_tour">Giro urbano / sociale</option>
+          <option value="day_tour">Cicloturismo giornaliero</option>
+          <option value="bikepacking">Cicloviaggio / bikepacking (tappa)</option>
+          <option value="gravel">Gravel / sterrato</option>
+          <option value="mtb_trail">MTB / trail tecnico</option>
+          <option value="family_slow">Family / lento e panoramico</option>
+          <option value="training">Allenamento sportivo</option>
+        </select>
+        <div class="muted" id="routeTypeHint">
+          Serve per filtrare meglio i percorsi nell'app dei soci.
+        </div>
+      </div>
+
+      <div class="control">
+        <label class="tag">
+          <input type="checkbox" id="routeOfficial" />
+          Percorso "ufficiale" Bike4city (visibile a tutti i soci)
+        </label>
+      </div>
+
+      <div class="control">
+        <button class="btn primary" id="btnSaveBike4city" disabled>Salva percorso su Bike4city</button>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="control">
+        <label>Metriche sintetiche</label>
+        <div id="metrics" class="metrics"></div>
+      </div>
+
+      <div class="control">
+        <label>Profilo altimetrico</label>
+        <canvas id="elevationChart" width="320" height="120" style="width:100%; border-radius:8px; background:#020617;"></canvas>
+        <div class="muted" id="elevationSummary"></div>
+      </div>
+
+      <hr class="divider" />
+      <div class="muted">
+        Usiamo tile OSM e routing OpenRouteService tramite proxy su Firebase Functions.
+      </div>
+    </aside>
+
+    <div id="map"></div>
+  </div>
+</div>
+
+<!-- Librerie JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://unpkg.com/@tmcw/togeojson@5.8.0/dist/togeojson.umd.js"></script>
+
+<!-- Firebase v8 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<script>
+  // --- Firebase init (solo backend, niente UI di login qui) ---
+  let firebaseAvailable = false;
+  let auth = null;
+  let db = null;
+  let currentUser = null;
+
+  (function initFirebaseSafe() {
+    if (typeof firebase === "undefined") {
+      console.warn("Firebase non è definito (script non caricato?).");
+      return;
+    }
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyC6NH5_WRIBVdFWnATgAcjD4LRsdGni8XY",
+      authDomain: "bike4city-hub.firebaseapp.com",
+      projectId: "bike4city-hub",
+      storageBucket: "bike4city-hub.appspot.com",
+      messagingSenderId: "294046394493",
+      appId: "1:294046394493:web:1c41cfdc0009a28d8e3dbd"
+    };
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth();
+      db = firebase.firestore();
+      firebaseAvailable = true;
+
+      auth.onAuthStateChanged(user => {
+        currentUser = user;
+        console.log("Auth state (planner):", user ? user.email : "no user");
+      });
+    } catch (e) {
+      console.error("Errore init Firebase (planner percorsi):", e);
+    }
+  })();
+
+  // ========= Stato globale planner =========
+  let map, startMarker, routeLayer, poiLayer, cyclewaysLayer;
+  let lastRouteFeature = null;
+  let lastRouteMetrics = null;
+  let lastProfile = null;
+  let lastSurfaceType = null;
+
+  let currentMode = 'loop';
+  let abWaypoints = [];
+  let abClickMode = null;
+  let editMode = false;
+  let editViaPoints = [];
+
+  const infoEl = document.getElementById('info');
+  const metricsEl = document.getElementById('metrics');
+  const km = document.getElementById('km');
+  const kmOut = document.getElementById('kmOut');
+  const radius = document.getElementById('radius');
+  const radiusOut = document.getElementById('radiusOut');
+  const btnPOI = document.getElementById('btnPOI');
+  const btnEditRoute = document.getElementById('btnEditRoute');
+  const btnLoop = document.getElementById('btnLoop');
+  const btnExport = document.getElementById('btnExport');
+  const btnSaveBike4city = document.getElementById('btnSaveBike4city');
+  const profileSelect = document.getElementById('profileSelect');
+  const elevationCanvas = document.getElementById('elevationChart');
+  const elevationSummary = document.getElementById('elevationSummary');
+  const elevationCtx = elevationCanvas ? elevationCanvas.getContext('2d') : null;
+
+  const difficultySelect = document.getElementById('routeDifficulty');
+  const routeTypeSelect = document.getElementById('routeType');
+  const difficultyHint = document.getElementById('difficultyHint');
+  const routeTypeHint = document.getElementById('routeTypeHint');
+  const officialCheckbox = document.getElementById('routeOfficial');
+  const showCyclewaysCb = document.getElementById('showCycleways');
+
+  const thematicCategory = document.getElementById('thematicCategory');
+  const thematicMaxPoi = document.getElementById('thematicMaxPoi');
+  const btnThematicLoop = document.getElementById('btnThematicLoop');
+
+  const modeRadios = document.querySelectorAll('input[name="routeMode"]');
+  const modeHint = document.getElementById('modeHint');
+  const abControls = document.getElementById('abControls');
+  const abStatus = document.getElementById('abStatus');
+  const btnSetStart = document.getElementById('btnSetStart');
+  const btnAddVia = document.getElementById('btnAddVia');
+  const btnSetEnd = document.getElementById('btnSetEnd');
+
+  if (km && kmOut) kmOut.textContent = km.value;
+  if (radius && radiusOut) radiusOut.textContent = radius.value;
+
+  if (km) km.addEventListener('input', () => kmOut.textContent = km.value);
+  if (radius) radius.addEventListener('input', () => radiusOut.textContent = radius.value);
+
+  if (showCyclewaysCb) {
+    showCyclewaysCb.addEventListener('change', () => {
+      toggleCycleways().catch(e => {
+        console.error(e);
+        info('Errore rete ciclabile: ' + e.message);
+      });
+    });
+  }
+
+  function info(msg){
+    if (infoEl) infoEl.textContent = msg;
+  }
+
+  // ========= Mappa =========
+  function initMap() {
+    map = L.map('map').setView([41.9028, 12.4964], 12); // Roma
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    L.Control.geocoder({
+      defaultMarkGeocode: false
+    })
+    .on('markgeocode', function(e) {
+      const c = e.geocode.center;
+      map.setView(c, 14);
+      if (currentMode === 'loop') {
+        setStart(c);
+      }
+    })
+    .addTo(map);
+
+    map.on('click', onMapClick);
+
+    info('Clicca sulla mappa per impostare la partenza oppure usa la ricerca (in alto a sinistra).');
+  }
+
+  function onMapClick(e) {
+    // Se è attiva la modifica live (solo in modalità anello)
+    if (editMode && lastRouteFeature && currentMode === 'loop') {
+      handleEditClick(e.latlng).catch(err => {
+        console.error(err);
+        info('Errore modifica percorso: ' + err.message);
+      });
+      return;
+    }
+
+    if (currentMode === 'loop') {
+      setStart(e.latlng);
+    } else {
+      handleABMapClick(e.latlng);
+    }
+  }
+
+  function setStart(latlng) {
+    if (startMarker) startMarker.remove();
+    startMarker = L.marker(latlng, { draggable:true }).addTo(map).bindPopup('Partenza/Arrivo');
+    startMarker.on('dragend', () => info('Punto spostato. Puoi rigenerare il percorso.'));
+    info('Partenza impostata. Ora puoi cercare POI o creare l\'anello.');
+  }
+
+  function clearRoute() {
+    if (routeLayer) { routeLayer.remove(); routeLayer = null; }
+    lastRouteFeature = null;
+    lastRouteMetrics = null;
+    lastProfile = null;
+    lastSurfaceType = null;
+
+    // reset punti di correzione
+    if (editViaPoints && editViaPoints.length) {
+      editViaPoints.forEach(p => {
+        if (p.marker) p.marker.remove();
+      });
+    }
+    editViaPoints = [];
+    editMode = false;
+    if (btnEditRoute) {
+      btnEditRoute.classList.remove('primary');
+      btnEditRoute.textContent = 'Modifica percorso';
+    }
+
+    if (btnExport) btnExport.disabled = true;
+    if (btnSaveBike4city) btnSaveBike4city.disabled = true;
+
+    if (metricsEl) metricsEl.innerHTML = '';
+    if (elevationCtx && elevationCanvas) {
+      elevationCtx.clearRect(0, 0, elevationCanvas.width, elevationCanvas.height);
+    }
+    if (elevationSummary) elevationSummary.textContent = '';
+    if (difficultySelect) difficultySelect.value = '';
+    if (difficultyHint) difficultyHint.textContent = '';
+    if (routeTypeSelect) routeTypeSelect.value = '';
+    if (routeTypeHint) routeTypeHint.textContent = 'Serve per filtrare meglio i percorsi nell\'app dei soci.';
+    if (officialCheckbox) officialCheckbox.checked = false;
+  }
+
+  function clearPOI() {
+    if (poiLayer) { poiLayer.remove(); poiLayer = null; }
+  }
+
+  function clearABWaypoints() {
+    abWaypoints.forEach(wp => {
+      if (wp.marker) wp.marker.remove();
+    });
+    abWaypoints = [];
+    abClickMode = null;
+    if (abStatus) abStatus.textContent = '';
+  }
+
+  function handleABMapClick(latlng) {
+    if (!abClickMode) return;
+
+    if (abClickMode === 'start') {
+      const existingIndex = abWaypoints.findIndex(p => p.role === 'start');
+      if (existingIndex !== -1) {
+        const existing = abWaypoints[existingIndex];
+        if (existing.marker) existing.marker.remove();
+        abWaypoints.splice(existingIndex, 1);
+      }
+      const marker = L.marker(latlng, { draggable:true })
+        .addTo(map)
+        .bindPopup('Partenza (A)');
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        const wp = abWaypoints.find(p => p.role === 'start');
+        if (wp) { wp.lat = pos.lat; wp.lng = pos.lng; }
+      });
+      abWaypoints.unshift({ lat:latlng.lat, lng:latlng.lng, role:'start', marker });
+      if (abStatus) abStatus.textContent = 'Partenza (A) impostata.';
+
+    } else if (abClickMode === 'via') {
+      const indexVia = abWaypoints.filter(p => p.role === 'via').length + 1;
+      const marker = L.circleMarker(latlng, { radius:6, weight:2 })
+        .addTo(map)
+        .bindPopup('Tappa ' + indexVia);
+      abWaypoints.push({ lat:latlng.lat, lng:latlng.lng, role:'via', marker });
+      if (abStatus) abStatus.textContent = `Tappa ${indexVia} aggiunta.`;
+
+    } else if (abClickMode === 'end') {
+      const existingEndIndex = abWaypoints.findIndex(p => p.role === 'end');
+      if (existingEndIndex !== -1) {
+        const existing = abWaypoints[existingEndIndex];
+        if (existing.marker) existing.marker.remove();
+        abWaypoints.splice(existingEndIndex, 1);
+      }
+      const marker = L.marker(latlng, { draggable:true })
+        .addTo(map)
+        .bindPopup('Arrivo (B)');
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        const wp = abWaypoints.find(p => p.role === 'end');
+        if (wp) { wp.lat = pos.lat; wp.lng = pos.lng; }
+      });
+      abWaypoints.push({ lat:latlng.lat, lng:latlng.lng, role:'end', marker });
+      if (abStatus) abStatus.textContent = 'Arrivo (B) impostato.';
+    }
+
+    abClickMode = null;
+  }
+
+  // ========= Overpass (POI + rete ciclabile) =========
+  const OVERPASS_ENDPOINTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.openstreetmap.fr/api/interpreter'
+  ];
+
+  function overpassQuery(lat, lon, rMeters, filters) {
+    const query = `[out:json][timeout:25];
+      (
+        ${filters.join('\n')}
+      );
+      out center;`;
+    return query.replace(/\(around:R,lat,lon\)/g, `(around:${rMeters},${lat},${lon})`);
+  }
+
+  async function fetchOverpass(query) {
+    for (const url of OVERPASS_ENDPOINTS) {
+      try {
+        const res = await fetch(url, { method:'POST', body:query });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      } catch(e) {
+        console.warn('Overpass fallback...', url, e);
+      }
+    }
+    throw new Error('Tutti gli endpoint Overpass hanno fallito.');
+  }
+
+  function buildPoiFilters(selected) {
+    const parts = [];
+    if (selected.cafe)   parts.push('node["amenity"="cafe"](around:R,lat,lon);');
+    if (selected.water)  parts.push('node["amenity"="drinking_water"](around:R,lat,lon);');
+    if (selected.bikeshop) parts.push('node["shop"="bicycle"](around:R,lat,lon);');
+    if (selected.repair) parts.push('node["amenity"="bicycle_repair_station"](around:R,lat,lon);');
+    return parts;
+  }
+
+  // Categorie per anelli tematici
+  function buildThematicPoiFilters(category) {
+    const parts = [];
+    switch (category) {
+      case 'cafe_water':
+        parts.push('node["amenity"="cafe"](around:R,lat,lon);');
+        parts.push('node["amenity"="bar"](around:R,lat,lon);');
+        parts.push('node["amenity"="drinking_water"](around:R,lat,lon);');
+        break;
+      case 'parks_nature':
+        parts.push('node["leisure"="park"](around:R,lat,lon);');
+        parts.push('node["tourism"="viewpoint"](around:R,lat,lon);');
+        parts.push('node["leisure"="garden"](around:R,lat,lon);');
+        break;
+      case 'culture_history':
+        parts.push('node["historic"](around:R,lat,lon);');
+        parts.push('node["tourism"="museum"](around:R,lat,lon);');
+        parts.push('node["tourism"="attraction"](around:R,lat,lon);');
+        break;
+      case 'bike_world':
+        parts.push('node["shop"="bicycle"](around:R,lat,lon);');
+        parts.push('node["amenity"="bicycle_repair_station"](around:R,lat,lon);');
+        break;
+      default:
+        break;
+    }
+    return parts;
+  }
+
+  async function findPOI() {
+    let lat, lng;
+
+    if (currentMode === 'loop') {
+      if (!startMarker) {
+        alert('Imposta prima la partenza (clic sulla mappa).');
+        return;
+      }
+      const pos = startMarker.getLatLng();
+      lat = pos.lat;
+      lng = pos.lng;
+    } else {
+      const startWp = abWaypoints.find(p => p.role === 'start') || abWaypoints[0];
+      if (!startWp) {
+        alert('In modalità A→B imposta almeno la partenza (A) prima di cercare POI.');
+        return;
+      }
+      lat = startWp.lat;
+      lng = startWp.lng;
+    }
+
+    const r = Number(radius.value) * 1000;
+    const selected = {
+      cafe: document.getElementById('poi_cafe').checked,
+      water: document.getElementById('poi_water').checked,
+      bikeshop: document.getElementById('poi_bikeshop').checked,
+      repair: document.getElementById('poi_repair').checked,
+    };
+
+    if (!selected.cafe && !selected.water && !selected.bikeshop && !selected.repair) {
+      alert('Seleziona almeno una categoria di POI.');
+      return;
+    }
+
+    const filters = buildPoiFilters(selected);
+    const query = overpassQuery(lat, lng, r, filters);
+
+    info('Cerco POI su OpenStreetMap...');
+    clearPOI();
+
+    try {
+      const data = await fetchOverpass(query);
+      const pts = (data.elements || []).filter(el => el.type === 'node');
+      if (!pts.length) { info('Nessun POI trovato nel raggio scelto.'); return; }
+
+      poiLayer = L.layerGroup();
+      pts.forEach(n => {
+        const name = (n.tags && (n.tags.name || n.tags.amenity || n.tags.shop)) || 'POI';
+        const m = L.circleMarker([n.lat, n.lon], { radius:6, weight:1 })
+          .bindPopup(name);
+        m.addTo(poiLayer);
+      });
+      poiLayer.addTo(map);
+      info(`Trovati ${pts.length} POI. Puoi creare un anello o un A→B e poi usarli come tappe.`);
+      return pts;
+    } catch (e) {
+      console.error('Errore Overpass:', e);
+      info('Errore nella ricerca dei POI.');
+      alert('Errore nella ricerca dei POI: ' + e.message);
+    }
+  }
+
+  async function toggleCycleways() {
+    if (!map) return;
+
+    if (!showCyclewaysCb || !showCyclewaysCb.checked) {
+      if (cyclewaysLayer) {
+        cyclewaysLayer.remove();
+        cyclewaysLayer = null;
+      }
+      return;
+    }
+
+    const bounds = map.getBounds();
+    const south = bounds.getSouth();
+    const west  = bounds.getWest();
+    const north = bounds.getNorth();
+    const east  = bounds.getEast();
+
+    const query = `
+      [out:json][timeout:30];
+      (
+        way["highway"="cycleway"](${south},${west},${north},${east});
+        way["bicycle"="designated"](${south},${west},${north},${east});
+      );
+      out geom;
+    `;
+
+    info('Carico rete ciclabile da OpenStreetMap...');
+
+    try {
+      const data = await fetchOverpass(query);
+      const ways = (data.elements || []).filter(el => el.type === 'way' && el.geometry);
+
+      if (cyclewaysLayer) {
+        cyclewaysLayer.remove();
+        cyclewaysLayer = null;
+      }
+
+      cyclewaysLayer = L.layerGroup();
+
+      ways.forEach(w => {
+        const latlngs = w.geometry.map(pt => [pt.lat, pt.lon]);
+        L.polyline(latlngs, { weight: 3 })
+          .bindPopup(w.tags && (w.tags.name || 'Percorso ciclabile'))
+          .addTo(cyclewaysLayer);
+      });
+
+      cyclewaysLayer.addTo(map);
+      info(`Rete ciclabile caricata: ${ways.length} tratti trovati.`);
+    } catch (e) {
+      console.error(e);
+      info('Errore nel caricamento della rete ciclabile: ' + e.message);
+    }
+  }
+
+  // ========= helper distanze =========
+  function distanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  // ========= ORS (routing) =========
+  const ORS_PROXY_URL = 'https://us-central1-bike4city-hub.cloudfunctions.net/orsProxy';
+
+  function getAvoidFeatures() {
+    const arr = [];
+    if (document.getElementById('avoid_ferries').checked) arr.push('ferries');
+    if (document.getElementById('avoid_fords').checked) arr.push('fords');
+    if (document.getElementById('avoid_steps').checked) arr.push('steps');
+    return arr;
+  }
+
+  function profileToSurfaceType(profile) {
+    switch (profile) {
+      case 'cycling-road': return 'road';
+      case 'cycling-mountain': return 'gravel';
+      case 'cycling-regular':
+      default: return 'mixed';
+    }
+  }
+
+  function suggestDifficulty(distanceKm, ascent) {
+    const fatigue = distanceKm + (ascent / 100);
+    if (fatigue <= 35) return 'easy';
+    if (fatigue <= 75) return 'moderate';
+    if (fatigue <= 110) return 'hard';
+    return 'epic';
+  }
+
+  function difficultyLabel(code) {
+    switch (code) {
+      case 'easy': return 'Facile';
+      case 'moderate': return 'Media';
+      case 'hard': return 'Impegnativa';
+      case 'epic': return 'Molto impegnativa / epica';
+      default: return '';
+    }
+  }
+
+  function routeTypeLabel(code) {
+    switch (code) {
+      case 'urban_commute': return 'Urbano quotidiano / commuting';
+      case 'urban_tour': return 'Giro urbano / sociale';
+      case 'day_tour': return 'Cicloturismo giornaliero';
+      case 'bikepacking': return 'Cicloviaggio / bikepacking (tappa)';
+      case 'gravel': return 'Gravel / sterrato';
+      case 'mtb_trail': return 'MTB / trail tecnico';
+      case 'family_slow': return 'Family / lento e panoramico';
+      case 'training': return 'Allenamento sportivo';
+      default: return '';
+    }
+  }
+
+  function computeRouteMetrics(feature) {
+    if (!feature || !feature.properties || !feature.properties.summary) return null;
+    const s = feature.properties.summary;
+    const distanceKm = s.distance / 1000;
+
+    let ascent = s.ascent;
+    let descent = s.descent;
+
+    // Fallback: calcola dislivello dalla geometria 3D se mancano ascent/descent
+    const coords = feature.geometry && feature.geometry.coordinates;
+    if (coords && coords.length > 1 && (ascent == null || descent == null)) {
+      let a = 0;
+      let d = 0;
+      let prevEle = (typeof coords[0][2] === 'number') ? coords[0][2] : null;
+
+      for (let i = 1; i < coords.length; i++) {
+        const ele = (typeof coords[i][2] === 'number') ? coords[i][2] : null;
+        if (ele == null || prevEle == null) {
+          prevEle = ele;
+          continue;
+        }
+        const diff = ele - prevEle;
+        if (diff > 0) a += diff;
+        else d -= diff;
+        prevEle = ele;
+      }
+
+      if (ascent == null) ascent = a;
+      if (descent == null) descent = d;
+    }
+
+    ascent = isFinite(ascent) ? ascent : 0;
+    descent = isFinite(descent) ? descent : 0;
+
+    const surfaceStats = feature.properties.surfaceStats || null;
+    const difficultyCode = suggestDifficulty(distanceKm, ascent);
+
+    return {
+      distanceKm,
+      ascent,
+      descent,
+      surfaceStats,
+      difficultyCode
+    };
+  }
+
+  function updateMetricsUI(metrics) {
+    if (!metricsEl) return;
+    metricsEl.innerHTML = '';
+
+    if (!metrics) {
+      metricsEl.textContent = 'Nessun percorso ancora calcolato.';
+      return;
+    }
+
+    const { distanceKm, ascent, descent, surfaceStats } = metrics;
+
+    function metric(text) {
+      const span = document.createElement('span');
+      span.className = 'chip';
+      span.textContent = text;
+      metricsEl.appendChild(span);
+    }
+
+    metric(`Distanza: ${distanceKm.toFixed(1)} km`);
+    metric(`Dislivello: +${Math.round(ascent)} m / -${Math.round(descent)} m`);
+
+    if (surfaceStats) {
+      const total = surfaceStats.total || 1;
+      const asphaltPct = surfaceStats.asphalt ? (surfaceStats.asphalt / total * 100) : 0;
+      const unpavedPct = surfaceStats.unpaved ? (surfaceStats.unpaved / total * 100) : 0;
+      const roughPct = surfaceStats.rough ? (surfaceStats.rough / total * 100) : 0;
+
+      metric(`Fondo: asfalto ~${asphaltPct.toFixed(0)}%, sterrato ${unpavedPct.toFixed(0)}%, tecnico ${roughPct.toFixed(0)}%`);
+    }
+  }
+
+  function drawElevationProfile(feature) {
+    if (!elevationCanvas || !elevationCtx) return;
+
+    if (!feature || !feature.geometry) {
+      elevationCtx.clearRect(0, 0, elevationCanvas.width, elevationCanvas.height);
+      if (elevationSummary) elevationSummary.textContent = "Nessuna geometria disponibile.";
+      return;
+    }
+
+    const coords = feature.geometry.coordinates;
+    if (!coords || coords.length === 0) {
+      elevationCtx.clearRect(0, 0, elevationCanvas.width, elevationCanvas.height);
+      if (elevationSummary) elevationSummary.textContent = "Nessun dato altimetrico.";
+      return;
+    }
+
+    const distances = [];
+    const elevations = [];
+    let totalDist = 0;
+
+    for (let i=0; i<coords.length; i++) {
+      const c = coords[i];
+      const ele = c[2] ?? 0;
+      if (i>0) {
+        const prev = coords[i-1];
+        const dx = (c[0] - prev[0]) * 111320;
+        const dy = (c[1] - prev[1]) * 110540;
+        totalDist += Math.sqrt(dx*dx + dy*dy);
+      }
+      distances.push(totalDist/1000);
+      elevations.push(ele);
+    }
+
+    const w = elevationCanvas.width;
+    const h = elevationCanvas.height;
+    elevationCtx.clearRect(0, 0, w, h);
+
+    const minEle = Math.min(...elevations);
+    const maxEle = Math.max(...elevations);
+    const eleRange = Math.max(1, maxEle - minEle);
+    const maxDist = distances[distances.length - 1] || 1;
+
+    elevationCtx.beginPath();
+    for (let i=0; i<distances.length; i++) {
+      const x = (distances[i] / maxDist) * w;
+      const y = h - ((elevations[i] - minEle) / eleRange) * h;
+      if (i===0) elevationCtx.moveTo(x,y);
+      else elevationCtx.lineTo(x,y);
+    }
+    elevationCtx.strokeStyle = '#38bdf8';
+    elevationCtx.lineWidth = 1;
+    elevationCtx.stroke();
+
+    if (elevationSummary && lastRouteMetrics) {
+      const minText = isFinite(minEle) ? minEle.toFixed(0) : '?';
+      const maxText = isFinite(maxEle) ? maxEle.toFixed(0) : '?';
+      elevationSummary.textContent =
+        `Quota min ${minText} m, max ${maxText} m · Lunghezza ${lastRouteMetrics.distanceKm.toFixed(1)} km, dislivello +${Math.round(lastRouteMetrics.ascent)} m / -${Math.round(lastRouteMetrics.descent)} m.`;
+    }
+  }
+
+  function suggestRouteType(distanceKm, profile, mode, ascent) {
+    const d = distanceKm;
+    const a = ascent;
+
+    if (profile === 'cycling-mountain') {
+      if (d <= 25 && a <= 250) return 'gravel';
+      if (d <= 50 && a <= 900) return 'gravel';
+      if (d > 50 || a > 900) return 'mtb_trail';
+    }
+    if (profile === 'cycling-road') {
+      if (d <= 25) return 'urban_tour';
+      if (d <= 80) return 'day_tour';
+      return 'training';
+    }
+    if (profile === 'cycling-regular') {
+      if (d <= 25 && a <= 250) return 'family_slow';
+      if (d <= 35) return mode === 'loop' ? 'urban_tour' : 'urban_commute';
+      if (d <= 80) return 'day_tour';
+      if (d <= 120 && mode === 'ab') return 'bikepacking';
+      if (d > 120 && mode === 'ab') return 'bikepacking';
+      return 'training';
+    }
+
+    return 'day_tour';
+  }
+
+  function drawRoute(geojson, profile, surfaceType) {
+    if (!map) return;
+    if (!geojson || !geojson.features || !geojson.features.length) {
+      info('Nessun percorso trovato.');
+      return;
+    }
+
+    if (routeLayer) {
+      routeLayer.remove();
+      routeLayer = null;
+    }
+
+    const feat = geojson.features[0];
+    lastRouteFeature = feat;
+    lastProfile = profile;
+    lastSurfaceType = surfaceType;
+
+    const coords = feat.geometry.coordinates.map(c => [c[1], c[0]]);
+    routeLayer = L.polyline(coords, {
+      weight: 4,
+      color: '#a855f7',  // viola
+      opacity: 0.9
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding:[20,20] });
+
+    lastRouteMetrics = computeRouteMetrics(feat);
+    updateMetricsUI(lastRouteMetrics);
+
+    if (difficultySelect && lastRouteMetrics) {
+      const suggested = lastRouteMetrics.difficultyCode;
+      if (suggested && !difficultySelect.value) {
+        difficultySelect.value = suggested;
+        if (difficultyHint) {
+          difficultyHint.textContent =
+            `Suggerimento automatico difficoltà: ${difficultyLabel(suggested)} (km + dislivello).`;
+        }
+      }
+    }
+
+    if (routeTypeSelect && lastRouteMetrics) {
+      const suggestedType = suggestRouteType(
+        lastRouteMetrics.distanceKm,
+        profile,
+        currentMode,
+        lastRouteMetrics.ascent
+      );
+      if (!routeTypeSelect.value && suggestedType) {
+        routeTypeSelect.value = suggestedType;
+      }
+      if (routeTypeHint && suggestedType) {
+        routeTypeHint.textContent =
+          `Suggerimento automatico tipologia: ${routeTypeLabel(suggestedType)} (profilo bici, distanza, modalità).`;
+      }
+    }
+
+    if (btnExport) btnExport.disabled = false;
+    if (btnSaveBike4city) btnSaveBike4city.disabled = false;
+
+    drawElevationProfile(feat);
+  }
+
+  // ========= modifica live percorso (solo anello) =========
+  async function recalcRouteWithEditPoints() {
+    if (!lastRouteFeature && !startMarker) {
+      alert('Non c\'è un percorso da modificare.');
+      return;
+    }
+
+    let startLat, startLng;
+    if (startMarker) {
+      const s = startMarker.getLatLng();
+      startLat = s.lat;
+      startLng = s.lng;
+    } else if (lastRouteFeature && lastRouteFeature.geometry && lastRouteFeature.geometry.coordinates.length) {
+      const first = lastRouteFeature.geometry.coordinates[0];
+      startLng = first[0];
+      startLat = first[1];
+    } else {
+      alert('Non riesco a determinare il punto di partenza.');
+      return;
+    }
+
+    const coords = [];
+    coords.push([startLng, startLat]);
+    editViaPoints.forEach(p => coords.push([p.lng, p.lat]));
+    coords.push([startLng, startLat]);
+
+    const profile = lastProfile || (profileSelect ? profileSelect.value : 'cycling-regular');
+    const surfaceType = profileToSurfaceType(profile);
+    const avoid = getAvoidFeatures();
+
+    info('Ricalcolo il percorso con i punti di correzione...');
+
+    const payload = {
+      mode: 'ab',
+      profile,
+      coordinates: coords,
+      avoid
+    };
+
+    try {
+      const res = await fetch(ORS_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        console.error('Errore ORS (modifica percorso):', res.status, t);
+        info('Errore nel ricalcolo del percorso.');
+        alert('Errore ORS modifica: ' + res.status);
+        return;
+      }
+
+      const geo = await res.json();
+      console.log('ORS response edit (proxy):', geo);
+      drawRoute(geo, profile, surfaceType);
+      info(`Percorso aggiornato con ${editViaPoints.length} punto/i di correzione.`);
+    } catch (e) {
+      console.error('Errore richiesta ORS (modifica):', e);
+      info('Errore di rete nel ricalcolo del percorso.');
+      alert('Errore di rete: ' + e.message);
+    }
+  }
+
+  async function handleEditClick(latlng) {
+    if (!lastRouteFeature) {
+      alert('Non c\'è un percorso da modificare: crea prima un anello.');
+      return;
+    }
+
+    if (currentMode !== 'loop') {
+      alert('La modifica al volo funziona solo in modalità anello.');
+      return;
+    }
+
+    if (editViaPoints.length >= 6) {
+      alert('Hai già inserito 6 punti di correzione. Per non complicare troppo il giro, cancella o rifai il percorso.');
+      return;
+    }
+
+    // Controlla distanza dal percorso (max ~300 m)
+    if (typeof turf !== 'undefined' &&
+        lastRouteFeature &&
+        lastRouteFeature.geometry &&
+        lastRouteFeature.geometry.coordinates) {
+
+      const line = turf.lineString(
+        lastRouteFeature.geometry.coordinates.map(c => [c[0], c[1]])
+      );
+      const pt = turf.point([latlng.lng, latlng.lat]);
+      const dist = turf.pointToLineDistance(pt, line, { units: 'meters' });
+
+      if (dist > 300) {
+        alert('Clicca vicino al percorso (entro ~300 m) per correggere un tratto specifico.');
+        return;
+      }
+    }
+
+    // Crea marker di correzione
+    const marker = L.circleMarker(latlng, {
+      radius:7,
+      color:'#a855f7',
+      weight:2,
+      fillColor:'#a855f7',
+      fillOpacity:0.8
+    }).addTo(map);
+
+    const indexLabel = editViaPoints.length + 1;
+    marker.bindPopup(`Punto di correzione #${indexLabel}<br><small>Clicca per rimuovere</small>`);
+
+    const pointObj = { lat: latlng.lat, lng: latlng.lng, marker };
+    editViaPoints.push(pointObj);
+
+    // Rimozione del punto con click sul marker
+    marker.on('click', () => {
+      if (!editMode) return;
+      if (!confirm('Rimuovere questo punto di correzione e ricalcolare il percorso?')) return;
+
+      const idx = editViaPoints.indexOf(pointObj);
+      if (idx !== -1) {
+        editViaPoints.splice(idx, 1);
+      }
+      marker.remove();
+
+      if (editViaPoints.length > 0) {
+        recalcRouteWithEditPoints().catch(e => {
+          console.error(e);
+          info('Errore modifica percorso: ' + e.message);
+        });
+      } else {
+        info('Tutti i punti di correzione sono stati rimossi. Il percorso corrente resta invariato.');
+      }
+    });
+
+    // Ricalcola il percorso con il nuovo punto
+    await recalcRouteWithEditPoints();
+  }
+
+  async function createRoundTrip() {
+    if (!startMarker) {
+      alert('Imposta prima la partenza (clic sulla mappa).');
+      return;
+    }
+
+    clearRoute();
+    info('Calcolo il percorso ad anello...');
+
+    const { lat, lng } = startMarker.getLatLng();
+    const lengthMeters = Number(km.value) * 1000;
+    const seed = Math.floor(Math.random() * 50) + 1;
+    const avoid = getAvoidFeatures();
+
+    const profile = profileSelect ? profileSelect.value : 'cycling-regular';
+    const surfaceType = profileToSurfaceType(profile);
+
+    const payload = {
+      mode: 'roundtrip',
+      profile,
+      coordinates: [[lng, lat]],
+      lengthMeters,
+      seed,
+      avoid,
+    };
+
+    try {
+      const res = await fetch(ORS_PROXY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        console.error('Errore ORS (proxy):', res.status, t);
+        info('Errore nel calcolo del percorso.');
+        alert('Errore ORS: ' + res.status);
+        return;
+      }
+
+      const geo = await res.json();
+      console.log('ORS response (proxy):', geo);
+      drawRoute(geo, profile, surfaceType);
+      info('Percorso ad anello pronto. Puoi esportare GPX o salvarlo in Bike4city.');
+    } catch (e) {
+      console.error('Errore richiesta ORS (proxy):', e);
+      info('Errore di rete nel calcolo del percorso.');
+      alert('Errore di rete: ' + e.message);
+    }
+  }
+
+  async function createABRoute() {
+    if (!abWaypoints.length) {
+      alert('Per un percorso A→B imposta almeno partenza e arrivo.');
+      return;
+    }
+    const hasStart = abWaypoints.some(p => p.role === 'start');
+    const hasEnd = abWaypoints.some(p => p.role === 'end');
+    if (!hasStart || !hasEnd) {
+      alert('Per un percorso A→B servono almeno una partenza e un arrivo.');
+      return;
+    }
+
+    clearRoute();
+    info('Calcolo il percorso A→B...');
+
+    const ordered = [
+      ...abWaypoints.filter(p => p.role === 'start'),
+      ...abWaypoints.filter(p => p.role === 'via'),
+      ...abWaypoints.filter(p => p.role === 'end')
+    ];
+    const coords = ordered.map(p => [p.lng, p.lat]);
+
+    const avoid = getAvoidFeatures();
+    const profile = profileSelect ? profileSelect.value : 'cycling-regular';
+    const surfaceType = profileToSurfaceType(profile);
+
+    const payload = {
+      mode: 'ab',
+      profile,
+      coordinates: coords,
+      avoid,
+    };
+
+    try {
+      const res = await fetch(ORS_PROXY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        console.error('Errore ORS (proxy A→B):', res.status, t);
+        info('Errore nel calcolo del percorso A→B.');
+        alert('Errore ORS A→B: ' + res.status);
+        return;
+      }
+
+      const geo = await res.json();
+      console.log('ORS response A→B (proxy):', geo);
+      drawRoute(geo, profile, surfaceType);
+      info('Percorso A→B pronto. Puoi esportare GPX o salvarlo in Bike4city.');
+    } catch (e) {
+      console.error('Errore richiesta ORS A→B (proxy):', e);
+      info('Errore di rete nel calcolo del percorso A→B.');
+      alert('Errore di rete: ' + e.message);
+    }
+  }
+
+  // ========= Anello tematico sui POI =========
+  async function createThematicLoopFromPOI() {
+    if (!startMarker) {
+      alert('Per un anello tematico imposta prima il punto di partenza (clic sulla mappa).');
+      return;
+    }
+    if (!thematicCategory || !thematicCategory.value) {
+      alert('Seleziona una categoria per l\'anello tematico.');
+      return;
+    }
+
+    const maxPoi = Math.max(2, Math.min(12, parseInt(thematicMaxPoi.value || '6', 10)));
+    const { lat, lng } = startMarker.getLatLng();
+    const r = Number(radius.value) * 1000;
+
+    const filters = buildThematicPoiFilters(thematicCategory.value);
+    if (!filters.length) {
+      alert('Categoria non configurata.');
+      return;
+    }
+
+    const query = overpassQuery(lat, lng, r, filters);
+
+    info('Cerco POI tematici e costruisco un anello...');
+    clearPOI();
+    clearRoute();
+
+    try {
+      const data = await fetchOverpass(query);
+      const nodes = (data.elements || []).filter(el => el.type === 'node');
+      if (!nodes.length) {
+        info('Nessun POI trovato per questa categoria nel raggio scelto.');
+        alert('Nessun POI per questa categoria nella zona selezionata.');
+        return;
+      }
+
+      // ordina per distanza dal punto di partenza e limita a maxPoi
+      const withDist = nodes.map(n => ({
+        el: n,
+        lat: n.lat,
+        lng: n.lon,
+        dist: distanceMeters(lat, lng, n.lat, n.lon)
+      }));
+      withDist.sort((a,b) => a.dist - b.dist);
+      const selected = withDist.slice(0, Math.min(maxPoi, withDist.length));
+
+      // Nearest neighbour per ordinare la visita
+      let currentLat = lat;
+      let currentLng = lng;
+      const remaining = [...selected];
+      const ordered = [];
+
+      while (remaining.length) {
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i=0; i<remaining.length; i++) {
+          const cand = remaining[i];
+          const d = distanceMeters(currentLat, currentLng, cand.lat, cand.lng);
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+        const next = remaining.splice(bestIdx, 1)[0];
+        ordered.push(next);
+        currentLat = next.lat;
+        currentLng = next.lng;
+      }
+
+      // Mostra i POI tematici
+      poiLayer = L.layerGroup();
+      ordered.forEach((p, idx) => {
+        const m = L.marker([p.lat, p.lng]).addTo(poiLayer);
+        const name = p.el.tags && (
+          p.el.tags.name ||
+          p.el.tags['addr:housename'] ||
+          p.el.tags.amenity ||
+          p.el.tags.shop ||
+          p.el.tags.historic ||
+          p.el.tags.tourism
+        ) || `POI ${idx+1}`;
+        m.bindPopup(`<strong>${name}</strong><br/>Tappa tematica #${idx+1}`);
+      });
+      poiLayer.addTo(map);
+
+      // Costruisci i waypoints per ORS (A -> POI... -> A)
+      const coords = [];
+      coords.push([lng, lat]);
+      ordered.forEach(p => coords.push([p.lng, p.lat]));
+      coords.push([lng, lat]);
+
+      const profile = profileSelect ? profileSelect.value : 'cycling-regular';
+      const surfaceType = profileToSurfaceType(profile);
+      const avoid = getAvoidFeatures();
+
+      const payload = {
+        mode: 'ab',
+        profile,
+        coordinates: coords,
+        avoid
+      };
+
+      const res = await fetch(ORS_PROXY_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const t = await res.text();
+        console.error('Errore ORS (anello tematico):', res.status, t);
+        info('Errore nel calcolo dell\'anello tematico.');
+        alert('Errore ORS anello tematico: ' + res.status);
+        return;
+      }
+
+      const geo = await res.json();
+      console.log('ORS response anello tematico (proxy):', geo);
+      drawRoute(geo, profile, surfaceType);
+      info(`Anello tematico creato con ${ordered.length} POI.`);
+    } catch (e) {
+      console.error('Errore anello tematico:', e);
+      info('Errore nella creazione dell\'anello tematico.');
+      alert('Errore anello tematico: ' + e.message);
+    }
+  }
+
+  // ========= GPX =========
+  function generateGpxString() {
+    if (!lastRouteFeature || !lastRouteFeature.geometry) {
+      alert("Nessun percorso da esportare.");
+      return null;
+    }
+    const coords = lastRouteFeature.geometry.coordinates;
+
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    gpx += `<gpx version="1.1" creator="Bike4city Planner" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+    gpx += `<trk><name>Percorso Bike4city</name><trkseg>\n`;
+
+    coords.forEach(c => {
+      const lon = c[0];
+      const lat = c[1];
+      const ele = c[2] ?? 0;
+      gpx += `<trkpt lat="${lat}" lon="${lon}"><ele>${ele}</ele></trkpt>\n`;
+    });
+
+    gpx += `</trkseg></trk>\n</gpx>`;
+    return gpx;
+  }
+
+  function exportGPX() {
+    const gpxString = generateGpxString();
+    if (!gpxString) return;
+
+    const blob = new Blob([gpxString], { type:'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'percorso-bike4city.gpx';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ========= Salvataggio su Bike4city (Firestore) =========
+  async function saveRouteToBike4city() {
+    if (!firebaseAvailable || !db) {
+      alert("Backend Bike4city non disponibile (Firebase non inizializzato).");
+      return;
+    }
+    if (!currentUser) {
+      alert("Devi essere autenticato per salvare il percorso su Bike4city.");
+      return;
+    }
+
+    const title = (document.getElementById('routeTitle').value || '').trim() || 'Percorso senza titolo';
+    const description = (document.getElementById('routeDescription').value || '').trim();
+    const difficulty = (difficultySelect && difficultySelect.value) ? difficultySelect.value : null;
+    const routeType = (routeTypeSelect && routeTypeSelect.value) ? routeTypeSelect.value : null;
+    const isOfficial = (officialCheckbox && officialCheckbox.checked) ? true : false;
+
+    const gpxString = generateGpxString();
+    if (!gpxString) {
+      alert("Errore nella generazione del GPX.");
+      return;
+    }
+
+    if (!lastRouteMetrics) {
+      alert("Metriche del percorso mancanti.");
+      return;
+    }
+
+    const surfaceStats = lastRouteMetrics.surfaceStats || null;
+
+    const routeDoc = {
+      title,
+      description,
+      difficulty,
+      routeType,
+      routeMode: currentMode,
+      gpx: gpxString,
+      source: "planned-web",
+      surfaceType: lastSurfaceType || null,
+      distanceKm: lastRouteMetrics.distanceKm,
+      ascent: lastRouteMetrics.ascent,
+      descent: lastRouteMetrics.descent,
+      surfaceStats,
+      isOfficial,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByEmail: currentUser.email
+    };
+
+    try {
+      const ref = await db.collection('routes').add(routeDoc);
+      console.log("Percorso salvato con id", ref.id);
+      alert("Percorso salvato su Bike4city. ID: " + ref.id);
+    } catch (e) {
+      console.error("Errore nel salvataggio percorso:", e);
+      alert("Errore nel salvataggio del percorso: " + e.message);
+    }
+  }
+
+  // ========= Event binding =========
+  modeRadios.forEach(r => {
+    r.addEventListener('change', () => {
+      const newMode = r.value;
+      if (!r.checked) return;
+      if (newMode === currentMode) return;
+
+      clearRoute();
+      clearABWaypoints();
+
+      if (newMode === 'loop') {
+        if (abControls) abControls.style.display = 'none';
+        if (modeHint) modeHint.textContent =
+          "In modalità anello il sistema genera un giro chiuso attorno al punto di partenza.";
+        if (startMarker) {
+          startMarker.addTo(map);
+        }
+        btnLoop.textContent = "Crea anello";
+      } else {
+        if (abControls) abControls.style.display = 'block';
+        if (modeHint) modeHint.textContent =
+          "In modalità A→B scegli punto di partenza, tappe intermedie e arrivo.";
+        if (startMarker) { startMarker.remove(); startMarker = null; }
+        btnLoop.textContent = "Calcola A→B";
+      }
+
+      currentMode = newMode;
+    });
+  });
+
+  if (btnSetStart) {
+    btnSetStart.addEventListener('click', () => {
+      abClickMode = 'start';
+      if (abStatus) abStatus.textContent = "Clicca sulla mappa per impostare la partenza (A).";
+    });
+  }
+  if (btnAddVia) {
+    btnAddVia.addEventListener('click', () => {
+      abClickMode = 'via';
+      if (abStatus) abStatus.textContent = "Clicca sulla mappa per aggiungere una tappa intermedia.";
+    });
+  }
+  if (btnSetEnd) {
+    btnSetEnd.addEventListener('click', () => {
+      abClickMode = 'end';
+      if (abStatus) abStatus.textContent = "Clicca sulla mappa per impostare l'arrivo (B).";
+    });
+  }
+
+  if (btnPOI) {
+    btnPOI.addEventListener('click', () => {
+      findPOI().catch(e => {
+        console.error(e);
+        info('Errore POI: ' + e.message);
+      });
+    });
+  }
+
+  if (btnEditRoute) {
+    btnEditRoute.addEventListener('click', () => {
+      if (!lastRouteFeature) {
+        alert('Crea prima un percorso ad anello, poi potrai modificarlo cliccando sulla mappa.');
+        return;
+      }
+      if (currentMode !== 'loop') {
+        alert('La modifica al volo funziona solo in modalità anello.');
+        return;
+      }
+
+      editMode = !editMode;
+      if (editMode) {
+        btnEditRoute.classList.add('primary');
+        btnEditRoute.textContent = 'Fine modifica';
+        info('Modalità modifica attiva: clicca vicino al tratto da correggere per aggiungere un punto obbligato (max 6). Clic sul punto per rimuoverlo.');
+      } else {
+        btnEditRoute.classList.remove('primary');
+        btnEditRoute.textContent = 'Modifica percorso';
+        info('Modalità modifica disattivata. Puoi tornare a creare un nuovo percorso o salvare quello attuale.');
+      }
+    });
+  }
+
+  if (btnLoop) {
+    btnLoop.addEventListener('click', () => {
+      if (currentMode === 'loop') {
+        createRoundTrip().catch(e => {
+          console.error(e);
+          info('Errore percorso: ' + e.message);
+        });
+      } else {
+        createABRoute().catch(e => {
+          console.error(e);
+          info('Errore percorso A→B: ' + e.message);
+        });
+      }
+    });
+  }
+  if (btnExport) {
+    btnExport.addEventListener('click', exportGPX);
+  }
+  if (btnSaveBike4city) {
+    btnSaveBike4city.addEventListener('click', () => {
+      saveRouteToBike4city().catch(e => {
+        console.error(e);
+        info('Errore salvataggio: ' + e.message);
+      });
+    });
+  }
+  if (btnThematicLoop) {
+    btnThematicLoop.addEventListener('click', () => {
+      createThematicLoopFromPOI().catch(e => {
+        console.error(e);
+        info('Errore anello tematico: ' + e.message);
+      });
+    });
+  }
+
+  // Inizializza subito la mappa
+  initMap();
+</script>
+</body>
+</html>
