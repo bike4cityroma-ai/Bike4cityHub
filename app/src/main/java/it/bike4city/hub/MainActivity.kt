@@ -74,6 +74,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -312,6 +313,18 @@ private fun WelcomeScreenV2(
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyMedium
             )
+            Spacer(Modifier.height(18.dp))
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "© 2025 Bike4City APS – Tutti i diritti riservati",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) }
+
         }
     }
 }
