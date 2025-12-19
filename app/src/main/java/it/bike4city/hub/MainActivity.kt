@@ -1,6 +1,8 @@
 package it.bike4city.hub
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -15,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
@@ -72,6 +77,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -212,6 +218,7 @@ private fun AppRoot() {
                     modifier = Modifier.padding(padding)
                 ) {
                     composable("home") { HomeScreen() }
+                    composable("info") { InfoScreen(nav = nav) }
 
                     // Nested navigation for routes
                     navigation(startDestination = "routes_map", route = "routes") {
@@ -227,6 +234,7 @@ private fun AppRoot() {
                     composable("profile") {
                         ProfileScreen(
                             uid = uid,
+                            nav = nav,
                             onLogout = {
                                 FirebaseRepo.signOut()
                                 screen = "welcome"
@@ -429,7 +437,10 @@ private fun HomeScreen() {
 
 @Composable
 private fun ProfileScreen(
-    uid: String, onLogout: () -> Unit) {
+    uid: String,
+    nav: NavHostController,
+    onLogout: () -> Unit
+) {
     val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     Surface(Modifier.fillMaxSize(), color = pageBg) {
         val scope = rememberCoroutineScope()
@@ -450,6 +461,26 @@ private fun ProfileScreen(
         ) {
             item {
                 Text("Profilo e Tessera", style = MaterialTheme.typography.headlineMedium)
+            }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Info & Privacy", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Copyright, trattamento dei dati, riconoscimenti e contatti.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = { nav.navigate("info") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Apri")
+                        }
+                    }
+                }
             }
 
             item {
@@ -1264,5 +1295,133 @@ private fun InfoChip(text: String, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InfoScreen(nav: NavHostController) {
+    val scroll = rememberScrollState()
+    val pageBg = Color(0xFFF5F5F5)
+
+    Scaffold(
+        containerColor = pageBg,
+        topBar = {
+            TopAppBar(
+                title = { Text("Info & Privacy") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(scroll)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+
+            Text("Bike4City Hub", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "© 2025 Bike4City APS – Tutti i diritti riservati",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            InfoCard("Chi siamo") {
+                Text(
+                    "Bike4City Hub è un progetto indipendente di Bike4City APS per promuovere mobilità sostenibile, sicurezza stradale e cicloturismo urbano.\n\n" +
+                            "Crediamo che la città si capisca meglio a pedali. E se la capisci meglio, la pretendi migliore."
+                )
+            }
+
+            InfoCard("Dati personali e privacy") {
+                Text(
+                    "L’app utilizza la posizione GPS solo quando necessario per mostrare la tua posizione o registrare un percorso.\n\n" +
+                            "Non vendiamo dati, non facciamo profilazione pubblicitaria e non tracciamo gli utenti a fini commerciali.\n\n" +
+                            "Se attive funzioni di salvataggio/sincronizzazione, alcuni dati possono essere archiviati su servizi cloud (es. Firebase)."
+                )
+            }
+
+            InfoCard("I tuoi diritti") {
+                Text(
+                    "Puoi chiedere accesso, cancellazione ed esportazione dei tuoi dati (dove applicabile).\n\n" +
+                            "Scrivici: rispondiamo in modo umano, non burocratico."
+                )
+            }
+
+            InfoCard("Tracce e responsabilità") {
+                Text(
+                    "Le tracce che crei restano tue.\n\n" +
+                            "L’app è un supporto: non sostituisce il Codice della Strada, il buon senso e la valutazione dei rischi."
+                )
+            }
+
+            InfoCard("Riconoscimenti") {
+                Text(
+                    "• OpenStreetMap e contributori\n" +
+                            "• MapLibre\n" +
+                            "• Firebase\n" +
+                            "• Provider mappe (es. Thunderforest)\n\n" +
+                            "Marchi e loghi appartengono ai rispettivi proprietari."
+                )
+            }
+
+            InfoCard("Contatti") {
+                val ctx = LocalContext.current
+
+                val email = "info.hub@bike4city.org"
+                Text(
+                    text = "Email: $email",
+                    modifier = Modifier.clickable {
+                        val i = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:$email")
+                        }
+                        ctx.startActivity(i)
+                    },
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline
+                )
+
+                val site = "https://bike4city.org"
+                Text(
+                    text = "Sito: bike4city.org",
+                    modifier = Modifier.clickable {
+                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(site))
+                        ctx.startActivity(i)
+                    },
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline
+                )
+            }
+
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Ultimo aggiornamento: 12-2025",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
     }
 }
