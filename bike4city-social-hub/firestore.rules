@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // ✅ Staff: admin e superadmin
+    function admin() {
+      return signedIn() && (request.auth.token.role in ["admin", "superadmin"]);
+    }
+
+    // ✅ Approved: utenti approvati O staff (admin/superadmin)
+    // (evita blink/redirect loop se approved manca nel token)
+    function approved() {
+      return signedIn() && (
+        request.auth.token.approved == true ||
+        (request.auth.token.role in ["admin", "superadmin"])
+      );
+    }
+
+    // --- Users + Payments ---
+match /users/{uid} {
+
+  // Admin vede tutti, socio approvato vede solo se stesso
+  allow read: if admin() || (approved() && request.auth.uid == uid);
+
+  // ✅ Campi che il socio può aggiornare da app
+  function allowedUserSelfUpdateKeys() {
+    return [
+      "address",
+      "city",
+      "zip",
+      "newsletterOptIn",
+      "updatedAt"
+      // Se vuoi rendere modificabile anche phone, aggiungi "phone"
+    ];
+  }
+
+  // ✅ Create profilo: SOLO admin (come prima)
+  allow create: if admin();
+
+  // ✅ Delete profilo: SOLO admin
+  allow delete: if admin();
+
+  // ✅ Update profilo:
+  // - admin: può aggiornare tutto
+  // - socio approvato: può aggiornare SOLO alcuni campi, e solo il proprio doc
+  allow update: if admin() || (
+    approved()
+    && request.auth.uid == uid
+    && request.resource.data.diff(resource.data).changedKeys()
+         .hasOnly(allowedUserSelfUpdateKeys())
+  );
+
+  // ✅ Pagamenti: users/{uid}/payments/{paymentId}
+  match /payments/{paymentId} {
+    // socio approvato legge SOLO i propri pagamenti
+    allow read: if admin() || (approved() && request.auth.uid == uid);
+
+    // scrittura pagamenti SOLO admin (Cloud Functions / Admin UI)
+    allow write: if admin();
+  }
+}
+
+    // --- Board posts (bacheca messaggi) ---
+    match /board_posts/{postId} {
+      allow read: if admin()
+               || (approved() && resource.data.status == "published");
+      allow write: if admin();
+    }
+
+    match /board_posts/{id} {
+      allow read: if admin()
+               || (approved() && resource.data.status == "published");
+      allow write: if admin();
+    }
+
+    // --- Bacheca tracce ADMIN ---
+    match /routes_admin/{routeId} {
+
+  // ✅ Lettura:
+  // - admin/superadmin leggono sempre
+  // - soci approvati leggono solo se la traccia è pubblica
+  //
+  // Nota: supportiamo sia "visibility" che "status" così non dipendi da un solo campo.
+  allow read: if admin()
+           || (approved() && (
+                (resource.data.visibility == "public")
+                || (resource.data.status in ["public", "approved"])
+              ));
+
+  // ✅ Scrittura: solo staff
+  allow write: if admin();
+}
+
+
+    // --- Bacheca tracce SOCI ---
+    match /routes_member/{routeId} {
+
+      allow read: if admin() || (
+        approved() && (
+          resource.data.ownerUid == request.auth.uid ||
+          resource.data.status in ["suggested", "approved", "public"]
+        )
+      );
+
+      allow create: if admin() || (
+        approved() && request.resource.data.ownerUid == request.auth.uid
+      );
+
+      allow update, delete: if admin() || (
+        approved() && resource.data.ownerUid == request.auth.uid
+      );
+    }
+
+    // --- Inbox proposte (socio -> associazione) ---
+    match /routes_suggestions/{id} {
+      allow create: if approved();
+      allow read: if admin() || (approved() && resource.data.suggestedByUid == request.auth.uid);
+      allow update, delete: if admin();
+    }
+  }
+}

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bike4City – Area Soci</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-soci">SOCI</span>
+      </div>
+
+      <nav class="nav">
+        <a href="/soci/index.html" class="active">Area Soci</a>
+        <a href="/soci/card.html">Tessera</a>
+        <a href="/soci/routes.html">Archivio Tracce</a>
+        <a href="#" id="logoutBtn">Esci</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">Area Soci</h1>
+        <p class="hero-sub">Loggato come <strong id="userEmail">…</strong></p>
+        <p id="userMsg" class="muted" style="margin:6px 0 0;"></p>
+      </div>
+
+      <div class="hero-actions">
+        <a class="chip chip-ghost" href="/soci/routes.html">🚲 Archivio Tracce</a>
+        <button class="chip chip-danger" id="btnLogout2" type="button">Esci</button>
+      </div>
+    </section>
+
+    
+    <main class="grid" style="grid-template-columns: 1fr;">
+<section class="panel">
+        <div class="panel-head">
+          <h2>Bacheca</h2>
+          <span class="pill pill-soft">Pubblicati</span>
+        </div>
+
+        <div id="boardList" class="list muted">Caricamento…</div>
+      </section>
+    </main>
+
+    <footer>Bike4City © – mobilità sostenibile, territorio, comunità</footer>
+  </div>
+
+  <script type="module">
+    import { auth, db } from "/js/firebase.js";
+    import { requireAuth } from "/js/guard.js";
+    import { signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import {
+      collection,
+      query,
+      where,
+      orderBy,
+      getDocs,
+      limit
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return (String(s ?? ""))
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderError(msg) {
+      const list = $("boardList");
+      list.innerHTML = `<div class="empty">❗ ${escapeHtml(msg)}</div>`;
+    }
+
+    async function logout() {
+      try { await signOut(auth); } catch (e) { console.warn("signOut error:", e); }
+      // fallback anti-blocco
+      setTimeout(() => (location.href = "/index.html"), 150);
+      location.href = "/index.html";
+    }
+
+    [ $("logoutBtn"), $("btnLogout2") ].forEach((b) => {
+      if (!b) return;
+      b.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        logout();
+      });
+    });
+
+    function renderDocs(docs) {
+      const list = $("boardList");
+      list.innerHTML = "";
+
+      docs.forEach((docSnap) => {
+        const p = docSnap.data() || {};
+
+        const item = document.createElement("div");
+        item.className = "list-item";
+
+        const main = document.createElement("div");
+        main.className = "list-main";
+
+        const title = document.createElement("div");
+        title.className = "list-title";
+        title.textContent = String(p.title || "Messaggio");
+
+        const body = document.createElement("div");
+        body.className = "muted";
+        body.style.whiteSpace = "pre-wrap";
+        body.innerHTML = escapeHtml(String(p.body || ""));
+
+        main.appendChild(title);
+        main.appendChild(body);
+
+        item.appendChild(main);
+        list.appendChild(item);
+      });
+    }
+
+    async function loadBoard() {
+      const list = $("boardList");
+      list.textContent = "Caricamento…";
+
+      // 1) Query “bella” (richiede indice composito)
+      const qyIndexed = query(
+        collection(db, "board_posts"),
+        where("status", "==", "published"),
+        orderBy("createdAt", "desc"),
+        limit(50)
+      );
+
+      try {
+        const snap = await getDocs(qyIndexed);
+
+        if (snap.empty) {
+          list.innerHTML = `<div class="empty">Nessun messaggio pubblicato.</div>`;
+          return;
+        }
+
+        renderDocs(snap.docs);
+        return;
+
+      } catch (e) {
+        console.error("loadBoard indexed error:", e);
+
+        const msg = String(e?.message || "");
+        const isIndexErr = msg.toLowerCase().includes("requires an index");
+
+        // Se NON è un errore di indice, mostro e basta
+        if (!isIndexErr) {
+          renderError(msg || "Errore sconosciuto nel caricamento bacheca");
+          return;
+        }
+        // Se è errore indice, passo al fallback
+      }
+
+      // 2) Fallback: prendo gli ultimi 50 per data e filtro lato client
+      // (Di solito non richiede indice composito)
+      const qyFallback = query(
+        collection(db, "board_posts"),
+        orderBy("createdAt", "desc"),
+        limit(50)
+      );
+
+      try {
+        const snap2 = await getDocs(qyFallback);
+
+        if (snap2.empty) {
+          list.innerHTML = `<div class="empty">Nessun messaggio pubblicato.</div>`;
+          return;
+        }
+
+        const filtered = snap2.docs.filter(d => (d.data()?.status === "published"));
+
+        if (!filtered.length) {
+          list.innerHTML = `<div class="empty">Nessun messaggio pubblicato.</div>`;
+          return;
+        }
+
+        renderDocs(filtered);
+
+      } catch (e2) {
+        console.error("loadBoard fallback error:", e2);
+        renderError(String(e2?.message || "Errore sconosciuto nel caricamento bacheca"));
+      }
+    }
+
+    // ====== GUARD SOCI ======
+    const result = await requireAuth({
+      target: "soci",
+      requireRole: "member",
+      onDeny: (code, detail) => {
+        $("userMsg").textContent = "Accesso negato: " + code + " " + (detail || "");
+      }
+    });
+
+    if (!result) {
+      renderError("Accesso negato (login/ruolo).");
+      throw new Error("Auth denied");
+    }
+
+    $("userEmail").textContent = result.user?.email || "member";
+
+    // Debug a schermo: claims (approved/role)
+    try {
+      const tok = await auth.currentUser.getIdTokenResult(true);
+      const approved = tok?.claims?.approved;
+      const role = tok?.claims?.role;
+      $("userMsg").textContent = `claims → approved: ${approved} · role: ${role}`;
+    } catch (e) {
+      console.warn("Token claims error:", e);
+      $("userMsg").textContent = "Impossibile leggere i claim (vedi console)";
+    }
+
+    await loadBoard();
+  </script>
+</body>
+</html>

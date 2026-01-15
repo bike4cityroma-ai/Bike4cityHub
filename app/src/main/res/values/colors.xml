@@ -1,5 +1,5 @@
 <resources>
     <color name="b4c_primary">#0F766E</color>      <!-- verde petrolio -->
-    <color name="b4c_secondary">#F59E0B</color>    <!-- ambra -->
+    <!-- ambra -->
     <color name="b4c_splash_bg">#062925</color>    <!-- scuro elegante -->
 </resources>

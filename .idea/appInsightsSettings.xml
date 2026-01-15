@@ -9,9 +9,9 @@
               <option name="connection">
                 <ConnectionSetting>
                   <option name="appId" value="it.bike4city.hub" />
-                  <option name="mobileSdkAppId" value="1:562062788878:android:fa9ae57c728698a380ef5f" />
-                  <option name="projectId" value="bike4city-hub" />
-                  <option name="projectNumber" value="562062788878" />
+                  <option name="mobileSdkAppId" value="1:1040753382248:android:cdf8709a141b1273c8fcdd" />
+                  <option name="projectId" value="bike4city-social-hub" />
+                  <option name="projectNumber" value="1040753382248" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

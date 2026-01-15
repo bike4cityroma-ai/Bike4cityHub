@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Area Soci – Tessera digitale</title>
+  <link rel="stylesheet" href="/css/styles.css">
+
+  <style>
+    .wrap{ max-width: 980px; margin: 0 auto; padding: 16px; }
+    .muted{ opacity:.75; }
+
+    /* Tessera */
+    .card-preview{
+      position:relative; border-radius:18px; overflow:hidden;
+      min-height:200px; border:1px solid rgba(0,0,0,.10);
+      box-shadow:0 10px 30px rgba(0,0,0,.18);
+      background:#111;
+      margin-top: 14px;
+    }
+    .card-bg{
+      position:absolute; inset:0;
+      background-image:url('/img/card-bg.jpg');
+      background-size:cover;
+      background-position:center;
+      transform:scale(1.03);
+      filter:brightness(1.12) contrast(1.05) saturate(1.05);
+    }
+    .card-glass{
+      position:absolute; inset:0;
+      background:linear-gradient(180deg, rgba(0,0,0,.40), rgba(0,0,0,.12));
+    }
+    .card-content{ position:relative; padding:14px; color:#fff; }
+    .card-top{ display:flex; justify-content:space-between; gap:12px; align-items:start; }
+    .title{ font-size:20px; font-weight:900; letter-spacing:.3px; text-shadow:0 1px 10px rgba(0,0,0,.5); }
+    .sub{ margin-top:4px; font-size:12px; opacity:.96; text-shadow:0 1px 10px rgba(0,0,0,.45); word-break:break-word; }
+
+    .pill{
+      padding:6px 10px; border-radius:999px;
+      font-size:12px; font-weight:900; color:#fff;
+      box-shadow:0 8px 18px rgba(0,0,0,.25);
+      display:inline-block;
+    }
+    .st-pending{ background:#ff9800; }
+    .st-active{ background:#2e7d32; }
+    .st-expired{ background:#c62828; }
+
+    .qr{
+      width:90px; height:90px; border-radius:14px;
+      background:rgba(255,255,255,.93);
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 10px 20px rgba(0,0,0,.28);
+    }
+
+    .bottom{ margin-top:16px; display:flex; justify-content:space-between; align-items:end; gap:10px; }
+    .kv b{ display:block; font-size:11px; opacity:.85; }
+    .kv div{ font-size:13px; font-weight:700; }
+
+    /* Pagamenti */
+    table{ width:100%; border-collapse:collapse; margin-top:14px; }
+    th,td{ padding:10px 8px; border-bottom:1px solid rgba(0,0,0,.08); text-align:left; }
+    th{ font-size:12px; opacity:.75; }
+    .btn-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; }
+  </style>
+
+  <!-- QRCode library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-socio">SOCIO</span>
+      </div>
+      <nav class="nav">
+        <a href="/soci/index.html">Area Soci</a>
+        <a href="/soci/card.html" class="active">Tessera</a>
+        <a href="/soci/routes.html">Archivio Tracce</a>
+        <a href="#" id="logoutBtn">Esci</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">🪪 Tessera digitale</h1>
+        <p class="hero-sub">
+          Numero tessera, validità, stato e QR pronti anche per l’app Android.
+          <span class="muted" style="display:block; margin-top:6px;">Se ti risulta “expired”, contatta l’associazione per il rinnovo.</span>
+        </p>
+      </div>
+      <div class="hero-actions">
+        <a class="chip chip-ghost" href="/soci/index.html">← Torna</a>
+      </div>
+    </section>
+
+    <main class="grid" style="grid-template-columns: 1fr;">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>La tua tessera</h2>
+          <span class="pill" id="whoPill">…</span>
+        </div>
+
+        <div class="card-preview">
+          <div class="card-bg"></div>
+          <div class="card-glass"></div>
+          <div class="card-content">
+            <div class="card-top">
+              <div>
+                <div class="title" id="mName">—</div>
+                <div class="sub" id="mEmail">—</div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:10px; align-items:flex-end;">
+                <div id="mStatus"></div>
+                <div class="qr"><canvas id="qrCanvas"></canvas></div>
+              </div>
+            </div>
+
+            <div class="bottom">
+              <div class="kv">
+                <b>Tessera</b>
+                <div id="mNumber">—</div>
+              </div>
+              <div class="kv" style="text-align:right;">
+                <b>Validità</b>
+                <div id="mValid">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-sm" id="btnPrintCard">Stampa / Salva tessera (PDF)</button>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:12px;">
+        <div class="panel-head">
+          <h2>Pagamenti</h2>
+          <span class="pill pill-soft" id="payCount">…</span>
+        </div>
+
+        <div class="muted" id="payHint">Caricamento…</div>
+        <div style="overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Importo</th>
+                <th>Metodo</th>
+                <th>Validità</th>
+                <th>Ricevuta</th>
+              </tr>
+            </thead>
+            <tbody id="payTbody">
+              <tr><td colspan="5" class="muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer>Bike4City © – comunità, mobilità sostenibile, territorio</footer>
+  </div>
+
+  <script type="module" src="/js/soci-card.js"></script>
+</body>
+</html>

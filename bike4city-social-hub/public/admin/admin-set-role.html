@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bike4City – Ruoli & Permessi</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-admin">ADMIN</span>
+      </div>
+
+      <nav class="nav">
+        <a href="/admin/index.html">Dashboard</a>
+        <a href="/admin/posts.html">Messaggi</a>
+        <a href="/admin/hub-percorsi.html">Planner</a>
+        <a href="/admin/routes.html">Archivio Tracce</a>
+        <a href="#" id="logoutBtn">Esci</a>
+      </nav>
+    </header>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">Ruoli & Permessi</h1>
+        <p class="hero-sub">
+          Loggato come <strong id="adminEmail">…</strong>
+          <span id="adminMsg" class="muted" style="display:block; margin-top:6px;"></span>
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <a class="chip chip-ghost" href="/admin/index.html">⬅️ Torna alla dashboard</a>
+        <button class="chip chip-danger" id="btnLogout2" type="button">Esci</button>
+      </div>
+    </section>
+
+    <!-- CONTENT -->
+    <main class="grid">
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Imposta ruolo utente</h2>
+          <span class="pill pill-soft">Superadmin</span>
+        </div>
+
+        <div class="list">
+          <div class="list-item">
+            <div class="list-main">
+              <div class="list-title">UID utente</div>
+              <div class="list-meta muted">Incolla l’UID Firebase (Auth → Users)</div>
+              <input id="uid" class="input" placeholder="es. l0ewnT8dhkZ0zBuNZ42yTF4fHoN2" style="margin-top:10px; width:100%; padding:10px;" />
+            </div>
+          </div>
+
+          <div class="list-item">
+            <div class="list-main">
+              <div class="list-title">Ruolo</div>
+              <div class="list-meta muted">member / admin / superadmin</div>
+              <select id="role" style="margin-top:10px; width:100%; padding:10px;">
+                <option value="member">member</option>
+                <option value="admin">admin</option>
+                <option value="superadmin">superadmin</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="list-item">
+            <div class="list-main">
+              <button class="btn btn-primary" id="btnSetRole" type="button">Imposta ruolo</button>
+              <div id="hint" class="muted" style="margin-top:10px;">
+                Nota: dopo il cambio ruolo l’utente deve fare logout/login per vedere i nuovi permessi.
+              </div>
+            </div>
+          </div>
+
+          <div class="list-item">
+            <div class="list-main">
+              <div class="list-title">Esito</div>
+              <pre id="output" class="muted" style="margin-top:10px; white-space:pre-wrap;">—</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>Bike4City © – mobilità sostenibile, territorio, comunità</footer>
+  </div>
+
+  <script type="module">
+    import { auth } from "/js/firebase.js";
+    import { requireAuth } from "/js/guard.js";
+    import { signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+    // ✅ usa il tuo URL già corretto
+    const SET_USER_ROLE_URL = "https://setuserrolehttp-4jymnhamfa-uc.a.run.app";
+
+    const $ = (id) => document.getElementById(id);
+
+    async function logout() {
+      try { await signOut(auth); } catch(e) {}
+      location.href = "/index.html";
+    }
+
+    ["logoutBtn", "btnLogout2"].forEach((id) => {
+      const b = $(id);
+      if (!b) return;
+      b.addEventListener("click", (e) => {
+        e.preventDefault?.();
+        logout();
+      });
+    });
+
+    // ✅ IMPORTANTE:
+    //    - Non più "superadmin" qui (evita blink se il guard usa Firestore role)
+    //    - Basta essere staff per APRIRE la pagina
+    const result = await requireAuth({
+      target: "admin",
+      requireRole: "admin",
+      onDeny: (code, detail) => {
+        const el = $("adminMsg");
+        if (el) el.textContent = "Accesso negato: " + code + " " + (detail || "");
+        $("btnSetRole").disabled = true;
+      }
+    });
+
+    const user = result.user;
+    $("adminEmail").textContent = user?.email || "admin";
+
+    // ✅ Qui invece controlliamo il ruolo vero: i CLAIMS (fonte di verità)
+    let isSuperAdmin = false;
+    try {
+      const tokenRes = await auth.currentUser.getIdTokenResult(true);
+      const claimsRole = tokenRes?.claims?.role || "member";
+      isSuperAdmin = (claimsRole === "superadmin");
+
+      if (isSuperAdmin) {
+        $("adminMsg").textContent = "Sei SUPERADMIN: puoi cambiare i ruoli.";
+      } else {
+        $("adminMsg").textContent = "Sei admin, ma solo un SUPERADMIN può cambiare i ruoli.";
+        $("btnSetRole").disabled = true;
+      }
+    } catch (e) {
+      $("adminMsg").textContent = "Impossibile leggere i claims. Riprova logout/login.";
+      $("btnSetRole").disabled = true;
+    }
+
+    async function setRole() {
+      const out = $("output");
+      out.textContent = "⏳ Invio richiesta...";
+
+      if (!isSuperAdmin) {
+        out.textContent = "❌ Solo SUPERADMIN può cambiare i ruoli.";
+        return;
+      }
+
+      const uid = $("uid").value.trim();
+      const role = $("role").value;
+
+      if (!uid) {
+        out.textContent = "❌ Inserisci un UID";
+        return;
+      }
+
+      try {
+        const token = await auth.currentUser.getIdToken(true);
+
+        const res = await fetch(SET_USER_ROLE_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ uid, role })
+        });
+
+        let data = {};
+        try { data = await res.json(); } catch(e) {}
+
+        if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+        out.textContent = "✅ OK\n" + JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = "❌ Errore: " + (e?.message || e);
+      }
+    }
+
+    $("btnSetRole").addEventListener("click", setRole);
+  </script>
+</body>
+</html>

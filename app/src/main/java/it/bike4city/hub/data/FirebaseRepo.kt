@@ -1,12 +1,11 @@
 package it.bike4city.hub.data
 
-import android.net.Uri
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -15,8 +14,12 @@ import kotlinx.coroutines.tasks.await
 object FirebaseRepo {
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
-    private val storage: FirebaseStorage by lazy { FirebaseStorage.getInstance() }
     private val messaging: FirebaseMessaging by lazy { FirebaseMessaging.getInstance() }
+
+    private const val COL_USERS = "users"
+    private const val COL_BOARD = "board_posts"
+    private const val COL_ROUTES_MEMBER = "routes_member"
+    private const val COL_SUGGESTIONS = "routes_suggestions"
 
     fun currentUser(): FirebaseUser? = auth.currentUser
 
@@ -30,16 +33,15 @@ object FirebaseRepo {
         val result = auth.createUserWithEmailAndPassword(email, password).await()
         val uid = result.user?.uid ?: error("UID not found after signup")
 
-        val profile = UserProfile(
-            uid = uid,
+        val profile = UserProfileWeb(
+            displayName = name,
             email = email,
-            name = name,
-            cognome = "", // Not asked in signup form
-            attivo = true,
-            privacy = true, // Assume privacy is accepted
-            role = "user",
+            firstName = name,
+            role = "member",
+            status = "pending",
+            source = "android-app"
         )
-        db.collection("users").document(uid).set(profile).await()
+        db.collection(COL_USERS).document(uid).set(profile).await()
         runCatching { messaging.subscribeToTopic("users").await() }
     }
 
@@ -51,108 +53,151 @@ object FirebaseRepo {
     fun signOut() = auth.signOut()
 
     fun observeBoardMessages() = callbackFlow<List<BoardMessage>> {
-        val sub = db.collection("board")
+        val q = db.collection(COL_BOARD)
+            .whereEqualTo("status", "published")
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(50)
-            .addSnapshotListener { snap, err ->
-                if (err != null || snap == null) return@addSnapshotListener
-                val list = snap.documents.mapNotNull { it.toObject(BoardMessage::class.java) }
-                trySend(list)
+
+        val sub = q.addSnapshotListener { snap, err ->
+            if (err != null) {
+                Log.e("FirebaseRepo", "observeBoardMessages error: ${err.message}", err)
+                trySend(emptyList())
+                return@addSnapshotListener
             }
+            if (snap == null) {
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+
+            val list = snap.documents.mapNotNull { it.toObject(BoardMessage::class.java) }
+            trySend(list)
+        }
+
         awaitClose { sub.remove() }
     }
 
-    fun observeUserProfile(uid: String) = callbackFlow<UserProfile?> {
-        val sub = db.collection("users").document(uid)
-            .addSnapshotListener { snap, err ->
-                if (err != null) return@addSnapshotListener
-                trySend(snap?.toObject(UserProfile::class.java))
-            }
-        awaitClose { sub.remove() }
-    }
-
-    suspend fun updateUserProfile(uid: String, profile: UserProfile) {
-        db.collection("users").document(uid).set(profile).await()
-    }
-
-    suspend fun uploadMembershipCard(uid: String, imageUri: Uri): String {
-        val ref = storage.reference.child("membershipCards/$uid/card.jpg")
-        ref.putFile(imageUri).await()
-        val url = ref.downloadUrl.await().toString()
-        // aggiorno profilo
-        val current = db.collection("users").document(uid).get().await()
-            .toObject(UserProfile::class.java) ?: UserProfile()
-        updateUserProfile(uid, current.copy(cardImageUrl = url))
-        return url
-    }
-
-    fun observeOfficialRoutes() = callbackFlow<List<Route>> {
-        val sub = db.collection("routes")
-            .whereEqualTo("isOfficial", true)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .limit(100)
+    fun observeUserProfile(uid: String) = callbackFlow<UserProfileWeb?> {
+        val sub = db.collection(COL_USERS).document(uid)
             .addSnapshotListener { snap, err ->
                 if (err != null) {
-                    Log.w("FirebaseRepo", "Error observing official routes", err)
+                    Log.e("FirebaseRepo", "observeUserProfile error: ${err.message}")
                     return@addSnapshotListener
                 }
-                if (snap == null) return@addSnapshotListener
-                
-                val list = snap.documents.mapNotNull { d ->
-                    runCatching {
-                        d.toObject(Route::class.java)?.also { it.id = d.id }
-                    }.onFailure {
-                        Log.w("FirebaseRepo", "Failed to parse route document ${d.id}", it)
-                    }.getOrNull()
-                }
-                trySend(list)
+                trySend(snap?.toObject(UserProfileWeb::class.java))
             }
         awaitClose { sub.remove() }
     }
 
+    /**
+     * Aggiornamento profilo "STRICT":
+     * Invia SOLO i campi ammessi dalle regole di sicurezza.
+     */
+    suspend fun updateUserProfileSafe(uid: String, profile: UserProfileWeb) {
+        val updates = hashMapOf<String, Any>(
+            "address" to profile.address.trim(),
+            "city" to profile.city.trim(),
+            "zip" to profile.zip.trim(),
+            "newsletterOptIn" to profile.newsletterOptIn,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        db.collection(COL_USERS).document(uid).update(updates).await()
+    }
+
+    /**
+     * Osserva i percorsi ufficiali di Bike4City (admin -> soci)
+     */
+    fun observeOfficialRoutes() = callbackFlow<List<Route>> {
+        val q = db.collection(COL_ROUTES_MEMBER)
+            .whereEqualTo("status", "public")
+            .whereEqualTo("b4cCategory", "BIKE4CITY")
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+
+        val sub = q.addSnapshotListener { snap, err ->
+            if (err != null) {
+                Log.e("FirebaseRepo", "observeOfficialRoutes ERROR: ${err.message}", err)
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snap?.documents?.mapNotNull { d ->
+                d.toObject(Route::class.java)?.also { it.id = d.id }
+            } ?: emptyList()
+            trySend(list)
+        }
+        awaitClose { sub.remove() }
+    }
+
+    /**
+     * Osserva i percorsi della community approvati (socio -> approvato)
+     */
+    fun observeCommunityRoutes() = callbackFlow<List<Route>> {
+        val q = db.collection(COL_ROUTES_MEMBER)
+            .whereEqualTo("status", "public")
+            .whereEqualTo("b4cCategory", "COMMUNITY")
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+
+        val sub = q.addSnapshotListener { snap, err ->
+            if (err != null) {
+                Log.e("FirebaseRepo", "observeCommunityRoutes ERROR: ${err.message}", err)
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            val list = snap?.documents?.mapNotNull { d ->
+                d.toObject(Route::class.java)?.also { it.id = d.id }
+            } ?: emptyList()
+            trySend(list)
+        }
+        awaitClose { sub.remove() }
+    }
+
+    // Teniamo questa per compatibilità temporanea se serve
+    fun observeSuggestedRoutes() = observeOfficialRoutes()
+
     fun observeMyRoutes(uid: String) = callbackFlow<List<Route>> {
-        val sub = db.collection("routes")
+        val sub = db.collection(COL_ROUTES_MEMBER)
             .whereEqualTo("ownerUid", uid)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(100)
             .addSnapshotListener { snap, err ->
                 if (err != null) {
-                    Log.w("FirebaseRepo", "Error observing my routes", err)
+                    Log.e("FirebaseRepo", "observeMyRoutes ERROR: ${err.message}", err)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
-                if (snap == null) return@addSnapshotListener
-
-                val list = snap.documents.mapNotNull { d ->
-                    runCatching {
-                        d.toObject(Route::class.java)?.also { it.id = d.id }
-                    }.onFailure {
-                        Log.w("FirebaseRepo", "Failed to parse route document ${d.id}", it)
-                    }.getOrNull()
-                }
+                val list = snap?.documents?.mapNotNull { d ->
+                    d.toObject(Route::class.java)?.also { it.id = d.id }
+                } ?: emptyList()
                 trySend(list)
             }
         awaitClose { sub.remove() }
     }
 
     suspend fun saveRoute(route: Route): String {
-        val doc = db.collection("routes").add(route).await()
+        val doc = db.collection(COL_ROUTES_MEMBER).add(route).await()
         return doc.id
     }
 
     suspend fun loadRoute(id: String): Route? {
-        return runCatching {
-            val d = db.collection("routes").document(id).get().await()
-            d.toObject(Route::class.java)?.also { it.id = d.id }
-        }.onFailure {
-            Log.w("FirebaseRepo", "Failed to load route $id", it)
-        }.getOrNull()
+        return try {
+            val d = db.collection(COL_ROUTES_MEMBER).document(id).get().await()
+            if (d.exists()) {
+                d.toObject(Route::class.java)?.also { it.id = d.id }
+            } else {
+                // Fallback su suggeriti legacy se non trovato in member
+                val d2 = db.collection(COL_SUGGESTIONS).document(id).get().await()
+                d2.toObject(Route::class.java)?.also { it.id = d2.id }
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "loadRoute error for id $id: ${e.message}")
+            null
+        }
     }
 
     suspend fun deleteRoute(id: String) {
-        db.collection("routes").document(id).delete().await()
+        db.collection(COL_ROUTES_MEMBER).document(id).delete().await()
     }
 
     suspend fun updateRoute(route: Route) {
-        db.collection("routes").document(route.id).set(route).await()
+        db.collection(COL_ROUTES_MEMBER).document(route.id).set(route).await()
     }
 }

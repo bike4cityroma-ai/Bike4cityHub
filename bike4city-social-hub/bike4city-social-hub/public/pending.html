@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike4City – In attesa</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-public">STATO</span>
+      </div>
+      <nav class="nav">
+        <a href="/index.html" class="active">Accesso</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">Richiesta in attesa</h1>
+        <p class="hero-sub muted">La tua iscrizione è stata ricevuta, ma non è ancora stata approvata.</p>
+      </div>
+      <div class="hero-actions">
+        <button class="chip chip-danger" id="btnLogout" type="button">Esci</button>
+      </div>
+    </section>
+
+    <main class="grid" style="grid-template-columns:1fr; max-width:720px;">
+      <section class="panel">
+        <h2 style="margin:0 0 8px;">Cosa succede ora?</h2>
+        <ul class="muted" style="margin:0; padding-left: 18px; display:grid; gap:6px;">
+          <li>Un admin verifica la richiesta.</li>
+          <li>Quando sei approvato, rientra qui e fai login: verrai indirizzato all’Area Soci.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>Bike4City © – mobilità sostenibile, territorio, comunità</footer>
+  </div>
+
+  <script type="module">
+    import { auth } from "/js/firebase.js";
+    import { signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+    document.getElementById('btnLogout').addEventListener('click', async () => {
+      try { await signOut(auth); } catch(e) {}
+      location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

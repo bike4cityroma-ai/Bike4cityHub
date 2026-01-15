@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bike4City – Admin • Messaggi</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-admin">ADMIN</span>
+      </div>
+      <nav class="nav">
+        <a href="/admin/index.html">Dashboard</a>
+        <a href="/admin/posts.html" class="active">Messaggi</a>
+        <a href="/admin/hub-percorsi.html">Planner</a>
+        <a href="/admin/routes.html">Archivio Tracce</a>
+        <a href="#" id="logoutBtn">Esci</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">Messaggi in bacheca</h1>
+        <p class="hero-sub muted">Scrivi, salva bozze e pubblica per i soci.</p>
+        <p id="pageStatus" class="muted" style="margin-top:8px;"></p>
+      </div>
+      <div class="hero-actions">
+        <a class="chip chip-primary" href="/admin/hub-percorsi.html">🗺️ Apri planner percorsi</a>
+        <a class="chip chip-ghost" href="/admin/index.html#pending">👥 Richieste</a>
+      </div>
+    </section>
+
+    <main class="grid" style="grid-template-columns: 1fr;">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Nuovo messaggio</h2>
+          <span class="pill pill-soft">Staff</span>
+        </div>
+
+        <form id="postForm" style="display:grid; gap:10px;">
+          <label style="display:grid; gap:6px;">
+            <span class="muted">Titolo</span>
+            <input id="title" type="text" required maxlength="120" placeholder="Es: Assemblea soci – venerdì 19" />
+          </label>
+
+          <label style="display:grid; gap:6px;">
+            <span class="muted">Testo</span>
+            <textarea id="body" required rows="6" placeholder="Scrivi qui…"></textarea>
+          </label>
+
+          <div style="display:flex; gap:10px; flex-wrap: wrap; align-items:center;">
+            <button class="btn btn-ghost" type="button" id="saveDraftBtn">Salva bozza</button>
+            <button class="btn btn-primary" type="button" id="publishBtn">Pubblica</button>
+            <span id="formStatus" class="muted" style="margin-left:auto;"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Archivio messaggi</h2>
+          <span class="pill">Filtro</span>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+          <select id="filterStatus">
+            <option value="all">Tutti</option>
+            <option value="draft">Solo bozze</option>
+            <option value="published">Solo pubblicati</option>
+          </select>
+          <input id="searchInput" type="search" placeholder="Cerca titolo/testo…" style="flex:1; min-width: 220px;" />
+          <button class="btn btn-ghost btn-sm" id="refreshBtn" type="button">Aggiorna</button>
+        </div>
+
+        <div id="postsList" class="list"></div>
+      </section>
+    </main>
+
+    <footer>Bike4City © – mobilità sostenibile, territorio, comunità</footer>
+  </div>
+
+  <!-- Guard “light” lato pagina: accetta admin + superadmin -->
+  <script type="module">
+    try {
+      const { requireAuth } = await import("/js/guard.js");
+      const session = await requireAuth({ target: "admin", requireRole: "admin" });
+
+      // Nota: con la patch al guard.js che ti ho indicato prima,
+      // requireRole:"admin" accetta anche "superadmin".
+      const role = String(session?.role || "").toLowerCase();
+      const isStaff = ["admin", "superadmin"].includes(role);
+
+      if (!isStaff) {
+        const el = document.getElementById("pageStatus");
+        if (el) el.textContent = "⛔ Accesso riservato allo staff (admin/superadmin).";
+      }
+    } catch (e) {
+      const el = document.getElementById("pageStatus");
+      if (el) el.textContent = "⚠️ Errore autenticazione. Prova a fare logout/login.";
+      console.error(e);
+    }
+  </script>
+
+  <script type="module" src="/js/admin-posts.js"></script>
+</body>
+</html>

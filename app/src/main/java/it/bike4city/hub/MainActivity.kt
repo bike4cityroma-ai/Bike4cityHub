@@ -12,7 +12,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,17 +36,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,7 +69,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,15 +82,21 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +114,7 @@ import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import it.bike4city.hub.data.FirebaseRepo
 import it.bike4city.hub.data.Route
+import it.bike4city.hub.data.UserProfileWeb
 import it.bike4city.hub.gpx.GpxParser
 import it.bike4city.hub.location.LocationUpdates
 import it.bike4city.hub.maps.ThunderforestMapLibre
@@ -147,11 +169,9 @@ private fun AppRoot() {
 
     when (screen) {
         "welcome" -> WelcomeScreenV2(
-            onLoginClick = { screen = if (user != null) "app" else "login" },
-            onSignupClick = { screen = "signup" }
+            onLoginClick = { screen = if (user != null) "app" else "login" }
         )
         "login" -> LoginScreen(
-            isSignup = false,
             onLogin = {
                     email, pass ->
                 scope.launch {
@@ -161,22 +181,6 @@ private fun AppRoot() {
                     } catch (e: Exception) {
                         Log.w("AppRoot", "Sign-in failed", e)
                         Toast.makeText(context, "Login fallito: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            },
-            onGoToSignup = { screen = "signup" }
-        )
-        "signup" -> LoginScreen(
-            isSignup = true,
-            onGoToLogin = { screen = "login" },
-            onSignup = { name, email, pass ->
-                scope.launch {
-                    try {
-                        FirebaseRepo.signUp(email, pass, name)
-                        screen = "app"
-                    } catch (e: Exception) {
-                        Log.w("AppRoot", "Sign-up failed", e)
-                        Toast.makeText(context, "Registrazione fallita: ${e.message}", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -241,6 +245,9 @@ private fun AppRoot() {
                             }
                         )
                     }
+                    composable("edit_profile") {
+                        EditProfileScreen(uid = uid, nav = nav)
+                    }
                     composable(
                         route = "routeDetail/{id}",
                         arguments = listOf(navArgument("id") { type = NavType.StringType })
@@ -254,13 +261,12 @@ private fun AppRoot() {
     }
 }
 
-private data class BottomTab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
 
 @Composable
 private fun WelcomeScreenV2(
-    onLoginClick: () -> Unit,
-    onSignupClick: () -> Unit
+    onLoginClick: () -> Unit
 ) {
     val bg = Color(0xFF2E7D32) // green, più profondo
     val ivory = Color(0xFFFFF8E1)
@@ -304,15 +310,6 @@ private fun WelcomeScreenV2(
                 Text("Login")
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedButton(
-                onClick = onSignupClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Registrati")
-            }
-
             Spacer(Modifier.height(18.dp))
 
             Text(
@@ -339,15 +336,11 @@ private fun WelcomeScreenV2(
 
 @Composable
 private fun LoginScreen(
-    isSignup: Boolean = false,
     onLogin: ((String, String) -> Unit)? = null,
-    onSignup: ((String, String, String) -> Unit)? = null,
-    onGoToSignup: (() -> Unit)? = null,
-    onGoToLogin: (() -> Unit)? = null,
 ) {
-    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    val ctx = LocalContext.current
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFFF5F5F5)) {
         Column(
@@ -356,14 +349,9 @@ private fun LoginScreen(
         ) {
             Text("Bike4City Hub", style = MaterialTheme.typography.headlineLarge)
             Spacer(Modifier.height(6.dp))
-            Text(if (isSignup) "Crea account socio" else "Accedi", style = MaterialTheme.typography.titleMedium)
+            Text("Accedi", style = MaterialTheme.typography.titleMedium)
 
             Spacer(Modifier.height(20.dp))
-
-            if (isSignup) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nome") }, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(12.dp))
-            }
 
             OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(12.dp))
@@ -372,21 +360,38 @@ private fun LoginScreen(
             Spacer(Modifier.height(18.dp))
 
             Button(
-                onClick = {
-                    if (isSignup) onSignup?.invoke(name.trim(), email.trim(), pass)
-                    else onLogin?.invoke(email.trim(), pass)
-                },
+                onClick = { onLogin?.invoke(email.trim(), pass) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isSignup) "Registrati" else "Entra")
+                Text("Entra")
             }
 
-            TextButton(onClick = {
-                if (isSignup) onGoToLogin?.invoke()
-                else onGoToSignup?.invoke()
-            }) {
-                Text(if (isSignup) "Hai già un account? Accedi" else "Non hai un account? Registrati")
-            }
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text = "Non hai un account? Registrati sul sito bike4city.org",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clickable {
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://bike4city.org/register"))
+                    ctx.startActivity(i)
+                },
+                color = MaterialTheme.colorScheme.primary,
+                textDecoration = TextDecoration.Underline
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                text = "Password dimenticata? Recuperala dal sito",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clickable {
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://bike4city.org/password-reset"))
+                    ctx.startActivity(i)
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -443,16 +448,7 @@ private fun ProfileScreen(
 ) {
     val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     Surface(Modifier.fillMaxSize(), color = pageBg) {
-        val scope = rememberCoroutineScope()
         val profile by FirebaseRepo.observeUserProfile(uid).collectAsState(initial = null)
-
-        val picker = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.PickVisualMedia()
-        ) { uri ->
-            if (uri != null) {
-                scope.launch { FirebaseRepo.uploadMembershipCard(uid, uri) }
-            }
-        }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -483,56 +479,279 @@ private fun ProfileScreen(
                 }
             }
 
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Nome: ${profile?.name.orEmpty()} ${profile?.cognome.orEmpty()}")
-                        Text("Email: ${profile?.email.orEmpty()}")
+            if (profile != null) {
+                item {
+                    MembershipCard(profile!!)
+                }
+                
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val nome = listOf(profile!!.firstName, profile!!.lastName).filter { !it.isNullOrBlank() }.joinToString(" ")
+                            val fallback = profile!!.displayName.orEmpty()
+
+                            Text("Nome: ${if (nome.isNotBlank()) nome else fallback}")
+                            Text("Email: ${profile!!.email.orEmpty()}")
+                            if (!profile!!.phone.isNullOrBlank()) Text("Telefono: ${profile!!.phone}")
+                            if (!profile!!.city.isNullOrBlank()) Text("Città: ${profile!!.city}")
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
                 }
             }
 
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Numero tessera: ${profile?.tessera.orEmpty()}")
-                        Text("Scadenza: ${profile?.tesseraScadenza.orEmpty()}")
-                        Text("Stato: ${profile?.tesseraStato.orEmpty()}")
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Immagine tessera", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(10.dp))
-
-                        if (profile?.cardImageUrl?.isNotBlank() == true) {
-                            AsyncImage(
-                                model = profile!!.cardImageUrl,
-                                contentDescription = "Tessera",
-                                modifier = Modifier.fillMaxWidth().height(220.dp)
-                            )
-                        } else {
-                            Text("Nessuna immagine caricata.")
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Button(onClick = {
-                            picker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }) {
-                            Text("Carica / aggiorna tessera")
-                        }
-                    }
+                Button(
+                    onClick = { nav.navigate("edit_profile") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Modifica Profilo")
                 }
             }
 
             item {
                 OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Esci") }
+            }
+            
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "© 2025 Bike4City APS – Tutti i diritti riservati",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MembershipCard(profile: UserProfileWeb) {
+    val m = profile.membership
+    val formatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.ITALY) }
+
+    val numero = m.number.ifBlank { profile.membershipNumber.ifBlank { "—" } }
+    val validUntil = when {
+        m.validUntilTs != null -> formatter.format(m.validUntilTs)
+        m.validUntil.isNotBlank() -> m.validUntil
+        profile.membershipValidUntilTs != null -> formatter.format(profile.membershipValidUntilTs)
+        profile.membershipValidUntil.isNotBlank() -> profile.membershipValidUntil
+        else -> "—"
+    }
+
+    val fullName = listOf(profile.firstName, profile.lastName)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { profile.displayName.ifBlank { "Socio Bike4City" } }
+
+    val statoRaw = m.status.ifBlank { profile.status }
+    val stato = when (statoRaw.lowercase(Locale.ITALY)) {
+        "active", "attiva" -> "Attiva"
+        "pending", "in_attesa" -> "In attesa"
+        "expired", "scaduta" -> "Scaduta"
+        else -> statoRaw.ifBlank { "—" }
+    }
+
+    val pagamentoRaw = m.paymentStatus
+    val pagamento = when (pagamentoRaw.lowercase(Locale.ITALY)) {
+        "paid", "pagato" -> "Pagato"
+        "unpaid", "non_pagato" -> "Non pagato"
+        else -> pagamentoRaw.ifBlank { "—" }
+    }
+
+    // Colore scuro ufficiale Bike4City
+    val textColor = Color(0xFF1B5E20) 
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Image(
+                painter = painterResource(id = R.drawable.card_bg),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "TESSERA SOCIO", 
+                    style = MaterialTheme.typography.labelMedium,
+                    color = textColor.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    fullName.uppercase(), 
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = textColor,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                
+                Text(
+                    "N. tessera: $numero", 
+                    style = MaterialTheme.typography.titleMedium,
+                    color = textColor,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Text(
+                    "Validità: fino al $validUntil", 
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor.copy(alpha = 0.9f),
+                    fontWeight = FontWeight.Medium
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    InfoChipDark("Stato: $stato")
+                    InfoChipDark("Pagamento: $pagamento")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Chip con testo scuro per sfondi chiari
+ */
+@Composable
+private fun InfoChipDark(text: String) {
+    Surface(
+        color = Color(0xFF1B5E20).copy(alpha = 0.1f), // leggero velo verde scuro
+        shape = CircleShape,
+        modifier = Modifier.padding(vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF1B5E20),
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditProfileScreen(uid: String, nav: NavHostController) {
+    val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    val profile by FirebaseRepo.observeUserProfile(uid).collectAsState(initial = null)
+
+    var city by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var zip by remember { mutableStateOf("") }
+    var newsletterOptIn by remember { mutableStateOf(false) }
+
+    LaunchedEffect(profile) {
+        profile?.let {
+            city = it.city
+            address = it.address
+            zip = it.zip
+            newsletterOptIn = it.newsletterOptIn
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Modifica Profilo") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        if (profile == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Info a sola lettura (perché protette dalle rules)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Dati anagrafici (non editabili)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Nome: ${profile!!.firstName} ${profile!!.lastName}", style = MaterialTheme.typography.bodyMedium)
+                        Text("Email: ${profile!!.email}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text("Dati editabili", style = MaterialTheme.typography.titleSmall)
+
+                OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("Città") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Indirizzo") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = zip, onValueChange = { zip = it }, label = { Text("CAP") }, modifier = Modifier.fillMaxWidth())
+
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                    Switch(checked = newsletterOptIn, onCheckedChange = { newsletterOptIn = it })
+                    Spacer(Modifier.width(12.dp))
+                    Text("Iscriviti alla newsletter")
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val updated = profile!!.copy(
+                                city = city,
+                                address = address,
+                                zip = zip,
+                                newsletterOptIn = newsletterOptIn
+                            )
+                            try {
+                                FirebaseRepo.updateUserProfileSafe(uid, updated)
+                                Toast.makeText(ctx, "Profilo aggiornato!", Toast.LENGTH_SHORT).show()
+                                nav.popBackStack()
+                            } catch (e: Exception) {
+                                Log.e("EditProfile", "Update failed", e)
+                                Toast.makeText(ctx, "Errore: Permessi insufficienti o rete assente.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Salva")
+                }
             }
         }
     }
@@ -564,10 +783,13 @@ private fun RoutesMapScreen(uid: String, nav: NavHostController) {
 
                     val route = Route(
                         title = parsed.name ?: "GPX import ${SimpleDateFormat("dd/MM", Locale.ITALY).format(Date())}",
-                        gpx = gpxContent,
+                        gpxText = gpxContent,
                         distanceKm = parsed.distanceMeters / 1000.0,
                         isOfficial = false,
                         ownerUid = uid,
+                        createdByUid = uid,
+                        createdAt = Date(),
+                        status = "recorded",
                         source = "imported"
                     )
                     FirebaseRepo.saveRoute(route)
@@ -583,13 +805,13 @@ private fun RoutesMapScreen(uid: String, nav: NavHostController) {
     // --- Location permission (only to show dot / follow) ---
     var hasLocation by remember { mutableStateOf(false) }
     val requestPerms = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasLocation = isGranted
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { res ->
+        hasLocation = (res[Manifest.permission.ACCESS_FINE_LOCATION] == true) || (res[Manifest.permission.ACCESS_COARSE_LOCATION] == true)
     }
 
     DisposableEffect(Unit) {
-        requestPerms.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        requestPerms.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
         onDispose { }
     }
 
@@ -613,7 +835,7 @@ private fun RoutesMapScreen(uid: String, nav: NavHostController) {
                     Spacer(Modifier.height(12.dp))
 
                     MiniFabWithLabel(
-                        label = "Percorsi suggeriti",
+                        label = "Percorsi da Bike4city",
                         onClick = {
                             fabOpen = false
                             nav.navigate("official_routes_list")
@@ -767,31 +989,55 @@ private fun MyRoutesListScreen(uid: String, nav: NavHostController) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OfficialRoutesListScreen(nav: NavHostController) {
-    val pageBg = Color(0xFFF5F5F5) // grigio chiaro
+    val pageBg = Color(0xFFF5F5F5)
+    var selectedTab by remember { mutableIntStateOf(0) }
+    
     val official by FirebaseRepo.observeOfficialRoutes().collectAsState(initial = emptyList())
+    val community by FirebaseRepo.observeCommunityRoutes().collectAsState(initial = emptyList())
 
     Scaffold(
         containerColor = pageBg,
-
         topBar = {
-            TopAppBar(title = { Text("Percorsi suggeriti") }, navigationIcon = {
-                IconButton(onClick = { nav.popBackStack() }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+            Column {
+                TopAppBar(
+                    title = { Text("Percorsi da Bike4city") },
+                    navigationIcon = {
+                        IconButton(onClick = { nav.popBackStack() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                        }
+                    }
+                )
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Ufficiali") }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Community") }
+                    )
                 }
-            })
+            }
         }
     ) { padding ->
-        if (official.isEmpty()) {
+        val currentList = if (selectedTab == 0) official else community
+        
+        if (currentList.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Nessun percorso suggerito, per ora.", textAlign = TextAlign.Center)
+                Text(
+                    if (selectedTab == 0) "Nessun percorso ufficiale disponibile." else "Nessun percorso della community approvato.",
+                    textAlign = TextAlign.Center
+                )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(official) { r ->
+                items(currentList) { r ->
                     RouteListItem(route = r, onClick = { nav.navigate("routeDetail/${r.id}") })
                 }
             }
@@ -802,30 +1048,33 @@ private fun OfficialRoutesListScreen(nav: NavHostController) {
 @Composable
 private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = route.title.ifBlank { "(senza nome)" },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = route.title.ifBlank { "(senza nome)" },
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    
+                    // Badge categoria
+                    if (route.b4cCategory != null) {
+                        Spacer(Modifier.width(8.dp))
+                        CategoryBadge(route.b4cCategory!!)
+                    }
+                }
+                
+                Spacer(Modifier.height(4.dp))
                 val km = ((route.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
                 Text(
-                    text = "Distanza: $km km • Difficoltà: ${prettyDifficulty(route.difficulty)} • Dislivello: ${prettyMeters(route.ascent)}",
+                    text = "Dist: $km km • Diff: ${prettyDifficulty(route.difficulty)} • Disl: ${prettyMeters(route.ascentM)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (route.isOfficial) {
-                Icon(
-                    Icons.Outlined.Verified,
-                    contentDescription = "Ufficiale",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 12.dp)
-                )
-            }
+            
             if (onEdit != null) {
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = "Modifica")
@@ -836,6 +1085,28 @@ private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit
                     Icon(Icons.Outlined.Delete, contentDescription = "Elimina", tint = MaterialTheme.colorScheme.error)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CategoryBadge(category: String) {
+    val (color, icon, label) = when (category.uppercase()) {
+        "BIKE4CITY" -> Triple(Color(0xFF2E7D32), Icons.Default.Verified, "Ufficiale")
+        "COMMUNITY" -> Triple(Color(0xFF0288D1), Icons.Default.Group, "Community")
+        else -> Triple(Color.Gray, Icons.Outlined.Route, category)
+    }
+
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = color)
+            Spacer(Modifier.width(4.dp))
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color)
         }
     }
 }
@@ -871,13 +1142,13 @@ private fun EditRouteScreen(routeId: String, nav: NavHostController) {
                 }
             })
         }
-    ) {
+    ) { padding ->
         if (route == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
-            Column(Modifier.fillMaxSize().padding(it).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -992,10 +1263,13 @@ private fun RecordRouteScreen() {
 
                         val route = Route(
                             title = "Percorso del ${SimpleDateFormat("dd/MM", Locale.ITALY).format(Date(now))}",
-                            gpx = gpx,
+                            gpxText = gpx,
                             distanceKm = rec.distanceMeters / 1000.0,
                             isOfficial = false,
                             ownerUid = uid,
+                            createdByUid = uid,
+                            createdAt = Date(now),
+                            status = "recorded",
                             source = "recorded"
                         )
                         FirebaseRepo.saveRoute(route)
@@ -1081,7 +1355,8 @@ private fun RecordRouteScreen() {
                     }
                     TrackRecorder.Phase.PAUSED -> {
                         Button(
-                            onClick = { TrackRecordingService.resume(ctx) },
+                            onClick = { TrackRecorder.resume(System.currentTimeMillis())
+                                TrackRecordingService.resume(ctx) },
                             modifier = Modifier.weight(1f)
                         ) { Text("Riprendi") }
                         OutlinedButton(
@@ -1133,8 +1408,8 @@ private fun ViewRouteScreen(routeId: String) {
         return
     }
 
-    val points = remember(route!!.gpx) {
-        runCatching { GpxParser.parse(route!!.gpx).points }.getOrElse { emptyList() }
+    val points = remember(route!!.gpxText) {
+        runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
     }
 
     val ctx = LocalContext.current
@@ -1221,13 +1496,30 @@ private fun ViewRouteScreen(routeId: String) {
         }
 
         Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(route!!.title.ifBlank { "Percorso" }, style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(6.dp))
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        route!!.title.ifBlank { "Percorso" }, 
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (route!!.b4cCategory != null) {
+                        CategoryBadge(route!!.b4cCategory!!)
+                    }
+                }
+                
                 val km = ((route!!.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
+                val diffTxt = prettyDifficulty(route!!.difficulty)
+                val ascentTxt = prettyMeters(route!!.ascentM)
                 Text("Distanza: $km km")
-                Text("Difficoltà: ${route!!.difficulty}")
-                if (route!!.isOfficial) Text("Percorso ufficiale dell’associazione")
+                Text("Difficoltà: $diffTxt")
+                Text("Dislivello: $ascentTxt")
+                
+                if (route!!.b4cCategory == "BIKE4CITY") {
+                    Text("Percorso ufficiale dell'associazione", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                } else if (route!!.b4cCategory == "COMMUNITY") {
+                    Text("Percorso approvato dalla Community", color = Color(0xFF0288D1), fontWeight = FontWeight.Bold)
+                }
 
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1334,8 +1626,8 @@ private fun InfoScreen(nav: NavHostController) {
 
             InfoCard("Chi siamo") {
                 Text(
-                    "Bike4City Hub è un progetto indipendente di Bike4City APS per promuovere mobilità sostenibile, sicurezza stradale e cicloturismo urbano.\n\n" +
-                            "Crediamo che la città si capisca meglio a pedali. E se la capisci meglio, la pretendi migliore."
+                    "Bike4City Hub è un project indipendente di Bike4City APS per promuovere mobilità sostenibile, sicurezza stradale e cicloturismo urbano.\n\n" +
+                            "Crediamo che la città si capisci meglio a pedali. E se la capisci meglio, la pretendi migliore."
                 )
             }
 

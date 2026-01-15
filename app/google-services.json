@@ -1,13 +1,14 @@
 {
   "project_info": {
-    "project_number": "562062788878",
-    "project_id": "bike4city-hub",
-    "storage_bucket": "bike4city-hub.firebasestorage.app"
+    "project_number": "1040753382248",
+    "firebase_url": "https://bike4city-social-hub-default-rtdb.firebaseio.com",
+    "project_id": "bike4city-social-hub",
+    "storage_bucket": "bike4city-social-hub.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:562062788878:android:fa9ae57c728698a380ef5f",
+        "mobilesdk_app_id": "1:1040753382248:android:cdf8709a141b1273c8fcdd",
         "android_client_info": {
           "package_name": "it.bike4city.hub"
         }
@@ -15,7 +16,26 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBic7Znsk5wB3Ts5ft-V2dTpgCaAD2QUyo"
+          "current_key": "AIzaSyDtBWMu46BM8qBEnoXO_VwfQvpP-qghFkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1040753382248:android:e1c872f31e390d55c8fcdd",
+        "android_client_info": {
+          "package_name": "it.bike4city.touring"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDtBWMu46BM8qBEnoXO_VwfQvpP-qghFkk"
         }
       ],
       "services": {

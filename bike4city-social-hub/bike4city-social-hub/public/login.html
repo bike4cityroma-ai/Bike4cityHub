@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike4City – Accesso</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="container">
+
+    <header class="topbar">
+      <div class="brand">
+        <a href="/index.html" class="logoText">Bike4City</a>
+        <span class="area-badge area-public">ACCESSO</span>
+      </div>
+
+      <nav class="nav">
+        <a href="/index.html" class="active">Login</a>
+        <a href="/register.html">Iscrizione</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="hero-left">
+        <h1 class="hero-title">Area riservata</h1>
+        <p class="hero-sub muted">
+          Login unico: dopo l’accesso ti porto automaticamente nell’area <strong>Soci</strong> o <strong>Admin</strong>.
+        </p>
+        <p id="reasonMsg" class="muted" style="margin:6px 0 0;"></p>
+      </div>
+
+      <div class="hero-actions">
+        <a class="chip chip-ghost" href="/soci/index.html">Area Soci</a>
+        <a class="chip chip-ghost" href="/admin/index.html">Area Admin</a>
+      </div>
+    </section>
+
+    <main class="grid" style="grid-template-columns: 1fr; max-width: 720px;">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Accedi</h2>
+          <span class="pill pill-soft">Bike4City</span>
+        </div>
+
+        <form id="loginForm" style="display:grid; gap:10px;">
+          <label style="display:grid; gap:6px;">
+            <span class="muted">Email</span>
+            <input id="email" type="email" autocomplete="username" placeholder="nome@dominio.it" required />
+          </label>
+
+          <label style="display:grid; gap:6px;">
+            <span class="muted">Password</span>
+            <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+          </label>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-primary" id="btnLogin" type="submit">Entra</button>
+            <button class="btn btn-ghost" id="btnLogout" type="button">Esci</button>
+            <span id="loginMsg" class="muted" style="margin-left:auto;"></span>
+          </div>
+
+          <p class="muted" style="margin:4px 0 0;">
+            Se risulti “in attesa”, ti mostro subito la pagina di conferma.
+          </p>
+        </form>
+      </section>
+    </main>
+
+    <footer>Bike4City © – mobilità sostenibile, territorio, comunità</footer>
+  </div>
+
+  <script type="module">
+    import { auth } from "/js/firebase.js";
+    import { requireAuth } from "/js/guard.js";
+    import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    // mostra motivo (quando guard rimanda qui)
+    const params = new URLSearchParams(location.search);
+    const reason = params.get("reason");
+    if (reason) {
+      $("reasonMsg").textContent = "Nota: " + reason.replaceAll("_", " ");
+    }
+
+    async function logout() {
+      try { await signOut(auth); } catch(e) {}
+      $("loginMsg").textContent = "";
+    }
+
+    $("btnLogout").addEventListener("click", (e) => {
+      e.preventDefault();
+      logout();
+    });
+
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("loginMsg").textContent = "Accesso in corso…";
+
+      const email = ($("email").value || "").trim();
+      const password = $("password").value || "";
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // lo smistamento lo facciamo sotto via requireAuth
+      } catch (err) {
+        $("loginMsg").textContent = "Errore login: " + (err?.message || "unknown");
+      }
+    });
+
+    // Dopo login: smistamento vero (role + pending)
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+
+      $("loginMsg").textContent = "Controllo profilo…";
+
+      const result = await requireAuth({
+        target: "any",
+        requireRole: null,
+        onDeny: (code) => {
+          $("loginMsg").textContent = "Accesso: " + code;
+        }
+      });
+
+      if (!result) return;
+
+      const role = result.profile?.role || "socio";
+      if (role === "admin") location.href = "/admin/index.html";
+      else location.href = "/soci/index.html";
+    });
+  </script>
+</body>
+</html>
