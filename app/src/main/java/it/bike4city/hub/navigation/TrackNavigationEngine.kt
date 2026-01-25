@@ -1,38 +1,35 @@
 package it.bike4city.hub.navigation
 
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 
 data class NavigationUpdate(
     val onRoute: Boolean,
     val distanceToRouteMeters: Double,
     val nextInstruction: String,
     val distanceToInstructionMeters: Double,
-    val progressIndex: Int
+    val progressIndex: Int,
+    val remainingDistanceMeters: Double = 0.0
 )
 
 /**
  * “Navigator” minimalista per seguire una polilinea.
- *
- * Cosa fa bene:
- * - camera che segue l’utente (già gestita dal MapLibre location component)
- * - prossima manovra “basata su geometria” (no nomi vie)
- * - avvisi vocali (distanza alla manovra, fuori traccia)
- *
- * Cosa NON fa (scelta consapevole):
- * - ricalcolo percorso “stradale” (serve un routing engine)
  */
 class TrackNavigationEngine(
     private val points: List<LatLng>,
     private val maneuvers: List<Maneuver> = ManeuverGenerator.generate(points),
-    private val offRouteThresholdMeters: Double = 30.0
+    private val offRouteThresholdMeters: Double = 40.0 // Leggermente aumentata per tolleranza GPS
 ) {
 
     private val cumulativeMeters: DoubleArray = buildCumulative(points)
+    private val totalDistanceMeters: Double = cumulativeMeters.lastOrNull() ?: 0.0
 
     private var lastNearestIndex: Int = 0
     private var nextManeuverIdx: Int = 0
 
-    // evita ripetizioni in loop quando l'utente balla intorno alla soglia
+    // Buffer per evitare falsi positivi fuori traccia
+    private var offRouteCount: Int = 0
+    private val OFF_ROUTE_CONFIRMATION_COUNT = 3
+
     private var lastSpokenManeuverIndex: Int = -1
     private var lastOffRouteSpokenAt: Long = 0L
 
@@ -41,6 +38,7 @@ class TrackNavigationEngine(
         nextManeuverIdx = 0
         lastSpokenManeuverIndex = -1
         lastOffRouteSpokenAt = 0L
+        offRouteCount = 0
     }
 
     /**
@@ -62,7 +60,14 @@ class TrackNavigationEngine(
         lastNearestIndex = maxOf(lastNearestIndex, nearest)
 
         val distToRoute = Geo.distanceToPolylineMeters(pos, points)
-        val onRoute = distToRoute <= offRouteThresholdMeters
+        
+        // Logica "smart" per fuori traccia: richiede conferme multiple
+        if (distToRoute > offRouteThresholdMeters) {
+            offRouteCount++
+        } else {
+            offRouteCount = 0
+        }
+        val onRoute = offRouteCount < OFF_ROUTE_CONFIRMATION_COUNT
 
         // avanza manovra se abbiamo superato l'indice
         while (nextManeuverIdx < maneuvers.size && maneuvers[nextManeuverIdx].index <= lastNearestIndex) {
@@ -77,12 +82,15 @@ class TrackNavigationEngine(
             "fine percorso" to 0.0
         }
 
+        val remainingDist = (totalDistanceMeters - cumulativeMeters[lastNearestIndex]).coerceAtLeast(0.0)
+
         return NavigationUpdate(
             onRoute = onRoute,
             distanceToRouteMeters = distToRoute,
             nextInstruction = instr,
             distanceToInstructionMeters = distToInstr,
-            progressIndex = lastNearestIndex
+            progressIndex = lastNearestIndex,
+            remainingDistanceMeters = remainingDist
         )
     }
 

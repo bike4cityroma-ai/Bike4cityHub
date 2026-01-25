@@ -1,6 +1,6 @@
 package it.bike4city.hub.location
 
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
 object PolylineCodec {

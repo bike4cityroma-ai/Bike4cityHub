@@ -25,7 +25,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -41,7 +42,6 @@ android {
 
     buildFeatures { compose = true }
 
-    // (opzionale) se vuoi un APK più pulito
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
@@ -69,13 +69,11 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
 
-    // (questa serve per .await() che usi nel repo)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
     implementation(libs.play.services.location)
 
-    implementation(libs.maps.compose)
-    implementation(libs.maps.compose.utils)
+    // ✅ Teniamo solo MapLibre
     implementation(libs.maplibre.android.sdk)
     implementation(libs.datastore.preferences)
 

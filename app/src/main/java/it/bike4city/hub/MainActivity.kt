@@ -10,15 +10,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,19 +33,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Route
-import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -69,7 +57,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -89,8 +76,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -111,21 +96,20 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import coil.compose.AsyncImage
 import it.bike4city.hub.data.FirebaseRepo
 import it.bike4city.hub.data.Route
 import it.bike4city.hub.data.UserProfileWeb
 import it.bike4city.hub.gpx.GpxParser
-import it.bike4city.hub.location.LocationUpdates
 import it.bike4city.hub.maps.ThunderforestMapLibre
-import it.bike4city.hub.navigation.TrackNavigationEngine
-import it.bike4city.hub.navigation.TtsCoach
 import it.bike4city.hub.tracking.TrackRecorder
 import it.bike4city.hub.tracking.TrackRecordingService
+import it.bike4city.hub.ui.route.CategoryBadge
+import it.bike4city.hub.ui.route.ViewRouteScreen
+import it.bike4city.hub.ui.route.prettyDifficulty
+import it.bike4city.hub.ui.route.prettyMeters
 import it.bike4city.hub.ui.theme.Bike4CityHubTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
-import org.maplibre.android.geometry.LatLngBounds
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -1089,28 +1073,6 @@ private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit
     }
 }
 
-@Composable
-private fun CategoryBadge(category: String) {
-    val (color, icon, label) = when (category.uppercase()) {
-        "BIKE4CITY" -> Triple(Color(0xFF2E7D32), Icons.Default.Verified, "Ufficiale")
-        "COMMUNITY" -> Triple(Color(0xFF0288D1), Icons.Default.Group, "Community")
-        else -> Triple(Color.Gray, Icons.Outlined.Route, category)
-    }
-
-    Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = MaterialTheme.shapes.small,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = color)
-            Spacer(Modifier.width(4.dp))
-            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditRouteScreen(routeId: String, nav: NavHostController) {
@@ -1202,7 +1164,6 @@ private fun EditRouteScreen(routeId: String, nav: NavHostController) {
  */
 @Composable
 private fun RouteDetailScreen(routeId: String) {
-    val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     if (routeId == "_record") {
         RecordRouteScreen()
     } else {
@@ -1212,7 +1173,6 @@ private fun RouteDetailScreen(routeId: String) {
 
 @Composable
 private fun RecordRouteScreen() {
-    val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     val rec by TrackRecorder.state.collectAsState()
@@ -1368,225 +1328,6 @@ private fun RecordRouteScreen() {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ViewRouteScreen(routeId: String) {
-    var route by remember { mutableStateOf<Route?>(null) }
-
-    // modalità “Segui percorso”
-    var following by remember { mutableStateOf(false) }
-    var muted by remember { mutableStateOf(false) }
-    var navUpdate by remember {
-        mutableStateOf(
-            Triple("", Double.POSITIVE_INFINITY, true) // instruction, meters, onRoute
-        )
-    }
-
-    var hasLocation by remember { mutableStateOf(false) }
-    val requestPerms = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { res ->
-        hasLocation = (res[Manifest.permission.ACCESS_FINE_LOCATION] == true) || (res[Manifest.permission.ACCESS_COARSE_LOCATION] == true)
-    }
-
-    DisposableEffect(Unit) {
-        requestPerms.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-        onDispose { }
-    }
-
-
-    LaunchedEffect(routeId) {
-        route = FirebaseRepo.loadRoute(routeId)
-    }
-
-    if (route == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
-    val points = remember(route!!.gpxText) {
-        runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
-    }
-
-    val ctx = LocalContext.current
-
-    // engine & TTS: li ricreiamo quando cambia il percorso
-    val engine = remember(points) { TrackNavigationEngine(points = points) }
-    val tts = remember { TtsCoach(ctx) }
-    LaunchedEffect(muted) { tts.muted = muted }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            tts.shutdown()
-        }
-    }
-
-    // loop di navigazione: quando “following” è attivo, ascolta la posizione e aggiorna UI + voce
-    LaunchedEffect(following, hasLocation, points) {
-        if (!following || !hasLocation || points.size < 2) return@LaunchedEffect
-        engine.reset()
-        LocationUpdates.flow(ctx).collect { pos ->
-            val up = engine.update(pos)
-            navUpdate = Triple(up.nextInstruction, up.distanceToInstructionMeters, up.onRoute)
-
-            // voce: prossima manovra
-            if (engine.shouldSpeakManeuver(up)) {
-                val d = up.distanceToInstructionMeters.toInt().coerceAtLeast(1)
-                tts.speak("Tra $d metri, ${up.nextInstruction}")
-                engine.markManeuverSpoken()
-            }
-
-            // voce: fuori traccia
-            val now = System.currentTimeMillis()
-            if (engine.shouldSpeakOffRoute(now, up)) {
-                val d = up.distanceToRouteMeters.toInt().coerceAtLeast(1)
-                tts.speak("Sei fuori traccia di circa $d metri. Torna sul percorso.")
-            }
-        }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
-            if (points.isNotEmpty()) {
-                val boundsBuilder = LatLngBounds.Builder()
-                points.forEach { boundsBuilder.include(org.maplibre.android.geometry.LatLng(it.latitude, it.longitude)) }
-                ThunderforestMapLibre(
-                    modifier = Modifier.fillMaxSize(),
-                    points = points,
-                    initialBounds = boundsBuilder.build(),
-                    showMyLocation = hasLocation,
-                    // ✅ di default centra il percorso; quando attivi “Segui”, allora segue te
-                    followMyLocation = following
-                )
-            }
-
-            if (following && points.isNotEmpty()) {
-                val (instr, meters, onRoute) = navUpdate
-                Card(
-                    modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (onRoute) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        val m = if (meters.isFinite()) meters.roundToInt() else 0
-                        Text(
-                            if (onRoute) "Segui percorso" else "Fuori percorso",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        if (instr.isNotBlank()) {
-                            Text("Tra $m m: $instr", textAlign = TextAlign.Center)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(onClick = { muted = !muted }) {
-                                Text(if (muted) "Voce OFF" else "Voce ON")
-                            }
-                            Button(onClick = { following = false }) {
-                                Text("Stop")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        route!!.title.ifBlank { "Percorso" }, 
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (route!!.b4cCategory != null) {
-                        CategoryBadge(route!!.b4cCategory!!)
-                    }
-                }
-                
-                val km = ((route!!.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
-                val diffTxt = prettyDifficulty(route!!.difficulty)
-                val ascentTxt = prettyMeters(route!!.ascentM)
-                Text("Distanza: $km km")
-                Text("Difficoltà: $diffTxt")
-                Text("Dislivello: $ascentTxt")
-                
-                if (route!!.b4cCategory == "BIKE4CITY") {
-                    Text("Percorso ufficiale dell'associazione", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                } else if (route!!.b4cCategory == "COMMUNITY") {
-                    Text("Percorso approvato dalla Community", color = Color(0xFF0288D1), fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = { if (hasLocation) following = true },
-                        modifier = Modifier.weight(1f),
-                        enabled = hasLocation && points.size >= 2
-                    ) {
-                        Text("Segui")
-                    }
-                    OutlinedButton(
-                        onClick = { following = false },
-                        modifier = Modifier.weight(1f),
-                        enabled = following
-                    ) {
-                        Text("Esci")
-                    }
-                }
-
-                if (!hasLocation) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Per seguire il percorso servono i permessi di localizzazione.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-// --- Helpers: route metadata formatting --- //
-
-private fun prettyDifficulty(raw: String?): String {
-    val v = raw?.trim()?.lowercase(Locale.ITALY).orEmpty()
-    return when {
-        v.isBlank() -> "—"
-        v in setOf("easy", "facile") -> "Facile"
-        v in setOf("medium", "media", "medio") -> "Medio"
-        v in setOf("hard", "difficile") -> "Difficile"
-        else -> raw!!.trim().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ITALY) else it.toString() }
-    }
-}
-
-private fun prettyMeters(meters: Double?): String {
-    if (meters == null) return "—"
-    val m = meters.toInt()
-    return "${m} m"
-}
-
-@Composable
-private fun InfoChip(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = 2.dp,
-        shadowElevation = 1.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 

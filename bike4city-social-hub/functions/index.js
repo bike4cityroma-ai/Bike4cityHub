@@ -10,6 +10,201 @@ admin.initializeApp();
 // Secret: firebase functions:secrets:set ORS_API_KEY
 const ORS_API_KEY = defineSecret("ORS_API_KEY");
 
+// Helper: normalizza stringhe
+function normUpper(s) {
+  return String(s || "").trim().toUpperCase();
+}
+function normLower(s) {
+  return String(s || "").trim().toLowerCase();
+}
+function normDateIso(s) {
+  // tu usi YYYY-MM-DD come stringa: lasciamo così, ma puliamo spazi
+  return String(s || "").trim();
+}
+
+// Cerca in members_registry con CF + birthDate
+async function findRegistryByCfAndBirthDate(db, fiscalCodeInput, birthDate) {
+  const fcUpper = normUpper(fiscalCodeInput);
+  const fcLower = normLower(fiscalCodeInput);
+
+  // 1) prova uppercase
+  let q = await db
+    .collection("members_registry")
+    .where("fiscalCode", "==", fcUpper)
+    .where("birthDate", "==", birthDate)
+    .limit(1)
+    .get();
+
+  if (!q.empty) return q.docs[0];
+
+  // 2) prova lowercase (per i record già importati male)
+  q = await db
+    .collection("members_registry")
+    .where("fiscalCode", "==", fcLower)
+    .where("birthDate", "==", birthDate)
+    .limit(1)
+    .get();
+
+  if (!q.empty) return q.docs[0];
+
+  return null;
+}
+
+exports.claimRenewal = onCall(async (request) => {
+  // --- Auth ---
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Devi essere loggato per fare il rinnovo.");
+  }
+
+  const uid = request.auth.uid;
+  const data = request.data || {};
+
+  const fiscalCodeRaw = data.fiscalCode;
+  const birthDate = normDateIso(data.birthDate);
+
+  if (!fiscalCodeRaw || !birthDate) {
+    throw new HttpsError("invalid-argument", "Inserisci Codice Fiscale e data di nascita.");
+  }
+
+  const db = admin.firestore();
+
+  // --- Trova record registry ---
+  const regDoc = await findRegistryByCfAndBirthDate(db, fiscalCodeRaw, birthDate);
+  if (!regDoc) {
+    throw new HttpsError("not-found", "Nessun socio 2025 trovato con questi dati.");
+  }
+
+  // --- Transaction (anti doppio-claim) ---
+  const userRef = db.collection("users").doc(uid);
+  const regRef = regDoc.ref;
+
+  const fcUpper = normUpper(fiscalCodeRaw); // su users vogliamo sempre uppercase
+
+  await db.runTransaction(async (tx) => {
+    const regSnap = await tx.get(regRef);
+    if (!regSnap.exists) {
+      throw new HttpsError("not-found", "Record anagrafica non trovato (race).");
+    }
+
+    const reg = regSnap.data() || {};
+
+    // Se è già claimato da un altro uid → stop
+    if (reg.claimedByUid && reg.claimedByUid !== uid) {
+      throw new HttpsError("already-exists", "Questo socio risulta già agganciato a un altro account.");
+    }
+
+    // Leggi user esistente (può già esistere se l'utente ha iniziato registrazione)
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+
+    // Protezione anti-swap: se l'utente ha già un fiscalCode diverso → stop
+    if (userSnap.exists && userData.fiscalCode && normUpper(userData.fiscalCode) !== fcUpper) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Il tuo account risulta già associato a un altro Codice Fiscale."
+      );
+    }
+
+    // --- Patch verso users/{uid} ---
+    // Campi “editabili” che vuoi permettere all’utente: se li passa ora, sovrascriviamo.
+    const patchEditable = {};
+    if (typeof data.city === "string") patchEditable.city = data.city.trim();
+    if (typeof data.address === "string") patchEditable.address = data.address.trim();
+    if (typeof data.zip === "string") patchEditable.zip = data.zip.trim();
+    if (typeof data.newsletterOptIn === "boolean") patchEditable.newsletterOptIn = data.newsletterOptIn;
+
+    // Email/telefono: normalmente li prenderei dal login (email) e dal registry (telefono),
+    // ma se vuoi, puoi farli passare come override solo se stringa.
+    if (typeof data.phone === "string") patchEditable.phone = data.phone.trim();
+
+    const firstName = (reg.firstName || userData.firstName || "").trim();
+    const lastName = (reg.lastName || userData.lastName || "").trim();
+    const displayName = (userData.displayName || `${firstName} ${lastName}`.trim());
+
+    // membership: non distruggere quello che c’è, fai merge
+    const membershipExisting = (userData.membership && typeof userData.membership === "object")
+      ? userData.membership
+      : {};
+
+    // Se vuoi riportare la scadenza 2025 nello user (come “storico/expired”), la copiamo:
+    const regValidUntilTs = reg.membershipValidUntilTs || null;
+
+    const patchUsers = {
+      // anagrafica base (dal registry se presente, altrimenti non sovrascrivere con stringhe vuote)
+      fiscalCode: fcUpper,
+      birthDate: reg.birthDate || birthDate,
+
+      ...(firstName ? { firstName } : {}),
+      ...(lastName ? { lastName } : {}),
+      ...(displayName ? { displayName } : {}),
+
+      // contatti/indirizzo: prendiamo dal registry SOLO se ha valori utili
+      ...(reg.address ? { address: reg.address } : {}),
+      ...(reg.city ? { city: reg.city } : {}),
+      ...(reg.zip ? { zip: reg.zip } : {}),
+      ...(reg.phone ? { phone: reg.phone } : {}),
+      ...(reg.email ? { email: reg.email } : {}),
+
+      // stato richiesto da te
+      status: "pending",
+      role: userData.role || "member",
+
+      // traccia che è rinnovo
+      source: userData.source || "registry_renewal",
+      renewalFromYear: 2025,
+      renewalClaimedAt: admin.firestore.FieldValue.serverTimestamp(),
+
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+
+      // applica eventuali campi editabili passati dal form (vince l’utente)
+      ...patchEditable
+    };
+
+    // membership map coerente
+    const patchMembership = {
+      ...membershipExisting,
+      // se non c’è paymentStatus lo inizializziamo
+      paymentStatus: membershipExisting.paymentStatus || "unpaid",
+      // tier default se manca
+      tier: membershipExisting.tier || "standard"
+    };
+
+    // Se vuoi conservare la scadenza 2025 nello user (utile per debug/storico)
+    // solo se nello user non c’è già una validUntilTs valorizzata.
+    if (!patchMembership.validUntilTs && regValidUntilTs) {
+      patchMembership.validUntilTs = regValidUntilTs;
+    }
+
+    patchUsers.membership = patchMembership;
+
+    // Inoltre tu hai anche campi flat duplicati: li settiamo SOLO se mancano
+    if (!userData.membershipValidUntilTs && regValidUntilTs) {
+      patchUsers.membershipValidUntilTs = regValidUntilTs;
+    }
+    if (!userData.membershipValidUntil && reg.membershipValidUntilTs) {
+      // stringa leggibile (se ti serve) la puoi calcolare lato UI; qui non obbligo
+    }
+
+    // Scrivi su users
+    tx.set(userRef, patchUsers, { merge: true });
+
+    // Marca registry come claimato
+    tx.set(
+      regRef,
+      {
+        claimedByUid: uid,
+        claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+        statusRegistry: "claimed",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+  });
+
+  return { ok: true };
+});
+
+
 /**
  * Helpers membership
  */
@@ -79,6 +274,160 @@ async function verifyToken(req) {
     return null;
   }
 }
+/**
+ * =========================
+ * CLAIM RENEWAL (HTTP)
+ * - Usata dal form WP (login + rinnovo nello stesso form)
+ * - Richiede Authorization: Bearer <Firebase ID Token>
+ * =========================
+ */
+exports.claimRenewalHttp = onRequest(
+  { region: "us-central1" },
+  async (req, res) => {
+    // CORS
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    if (req.method === "OPTIONS") return res.status(204).send("");
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method Not Allowed" });
+    }
+
+    try {
+      // Auth
+      const decoded = await verifyToken(req);
+      if (!decoded?.uid) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const uid = decoded.uid;
+      const b = req.body || {};
+
+      const fiscalCodeRaw = String(b.fiscalCode || "").trim();
+      const birthDate = String(b.birthDate || "").trim(); // YYYY-MM-DD
+
+      if (!fiscalCodeRaw || !birthDate) {
+        return res.status(400).json({ error: "Inserisci Codice Fiscale e data di nascita." });
+      }
+
+      const db = admin.firestore();
+
+      // Trova record registry (gestisce CF upper/lower)
+      const regDoc = await findRegistryByCfAndBirthDate(db, fiscalCodeRaw, birthDate);
+      if (!regDoc) {
+        return res.status(404).json({ error: "Nessun socio 2025 trovato con questi dati." });
+      }
+
+      const userRef = db.collection("users").doc(uid);
+      const regRef = regDoc.ref;
+
+      const fcUpper = normUpper(fiscalCodeRaw);
+
+      await db.runTransaction(async (tx) => {
+        const regSnap = await tx.get(regRef);
+        if (!regSnap.exists) {
+          throw new Error("Record anagrafica non trovato (race).");
+        }
+
+        const reg = regSnap.data() || {};
+
+        // già claimato da un altro uid
+        if (reg.claimedByUid && reg.claimedByUid !== uid) {
+          throw new Error("Questo socio risulta già agganciato a un altro account.");
+        }
+
+        // user esistente?
+        const userSnap = await tx.get(userRef);
+        const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+
+        // protezione anti-swap
+        if (userSnap.exists && userData.fiscalCode && normUpper(userData.fiscalCode) !== fcUpper) {
+          throw new Error("Il tuo account risulta già associato a un altro Codice Fiscale.");
+        }
+
+        // campi editabili passati dal form (se li vuoi usare)
+        const patchEditable = {};
+        if (typeof b.city === "string") patchEditable.city = b.city.trim();
+        if (typeof b.address === "string") patchEditable.address = b.address.trim();
+        if (typeof b.zip === "string") patchEditable.zip = b.zip.trim();
+        if (typeof b.phone === "string") patchEditable.phone = b.phone.trim();
+        if (typeof b.newsletterOptIn === "boolean") patchEditable.newsletterOptIn = b.newsletterOptIn;
+
+        const firstName = (reg.firstName || userData.firstName || "").trim();
+        const lastName = (reg.lastName || userData.lastName || "").trim();
+        const displayName = (userData.displayName || `${firstName} ${lastName}`.trim());
+
+        const membershipExisting =
+          (userData.membership && typeof userData.membership === "object")
+            ? userData.membership
+            : {};
+
+        const regValidUntilTs = reg.membershipValidUntilTs || null;
+
+        const patchUsers = {
+          fiscalCode: fcUpper,
+          birthDate: reg.birthDate || birthDate,
+
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+          ...(displayName ? { displayName } : {}),
+
+          ...(reg.address ? { address: reg.address } : {}),
+          ...(reg.city ? { city: reg.city } : {}),
+          ...(reg.zip ? { zip: reg.zip } : {}),
+          ...(reg.phone ? { phone: reg.phone } : {}),
+          ...(reg.email ? { email: reg.email } : {}),
+
+          status: "pending",
+          role: userData.role || "member",
+
+          source: userData.source || "registry_renewal",
+          renewalFromYear: 2025,
+          renewalClaimedAt: admin.firestore.FieldValue.serverTimestamp(),
+
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+
+          ...patchEditable,
+        };
+
+        const patchMembership = {
+          ...membershipExisting,
+          paymentStatus: membershipExisting.paymentStatus || "unpaid",
+          tier: membershipExisting.tier || "standard",
+        };
+
+        if (!patchMembership.validUntilTs && regValidUntilTs) {
+          patchMembership.validUntilTs = regValidUntilTs;
+        }
+
+        patchUsers.membership = patchMembership;
+
+        if (!userData.membershipValidUntilTs && regValidUntilTs) {
+          patchUsers.membershipValidUntilTs = regValidUntilTs;
+        }
+
+        tx.set(userRef, patchUsers, { merge: true });
+
+        tx.set(
+          regRef,
+          {
+            claimedByUid: uid,
+            claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+            statusRegistry: "claimed",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+
+      return res.json({ ok: true });
+    } catch (e) {
+      logger.error("claimRenewalHttp error", e);
+      return res.status(400).json({ error: e?.message || String(e) });
+    }
+  }
+);
 
 /**
  * =========================

@@ -6,6 +6,17 @@ import com.google.firebase.firestore.ServerTimestamp
 import java.util.Date
 
 /* -----------------------------
+ * TRACK POINT - Per pendenze e tipi strada
+ * ----------------------------- */
+data class TrackPoint(
+    val lat: Double,
+    val lng: Double,
+    val ele: Double = 0.0,
+    val roadType: String? = null, // es. "asphalt", "unpaved", "cycleway"
+    val slope: Double = 0.0       // pendenza in percentuale
+)
+
+/* -----------------------------
  * BACHECA
  * ----------------------------- */
 @IgnoreExtraProperties
@@ -69,7 +80,7 @@ data class UserProfileWeb(
 
 /* -----------------------------
  * PROFILO (VECCHIO) - LEGACY
- * lo teniamo per non rompere subito UI/repo vecchi.
+ * lo teniamo per non romper subito UI/repo vecchi.
  * ----------------------------- */
 @IgnoreExtraProperties
 data class UserProfileLegacy(

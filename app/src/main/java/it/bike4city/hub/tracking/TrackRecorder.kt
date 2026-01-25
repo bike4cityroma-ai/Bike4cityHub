@@ -1,8 +1,10 @@
 package it.bike4city.hub.tracking
 
-import com.google.android.gms.maps.model.LatLng
+import android.location.Location
+import org.maplibre.android.geometry.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.*
 
 object TrackRecorder {
 
@@ -16,7 +18,7 @@ object TrackRecorder {
         val distanceMeters: Double = 0.0,
         val pausedTotalSec: Long = 0L,
         val pausedAt: Long = 0L,
-        val skipNextPoint: Boolean = false // ✅ miglioria: ignora 1 fix dopo resume
+        val skipNextPoint: Boolean = false
     ) {
         val isRecording: Boolean get() = phase == Phase.RECORDING
         val isPaused: Boolean get() = phase == Phase.PAUSED
@@ -26,11 +28,17 @@ object TrackRecorder {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
 
+    // Parametri per il filtro Kalman semplificato
+    private var lastLat = 0.0
+    private var lastLng = 0.0
+    private var variance = -1.0
+
     fun startNew(startedAt: Long) {
         _state.value = State(
             phase = Phase.RECORDING,
             startedAt = startedAt
         )
+        variance = -1.0
     }
 
     fun pause(now: Long) {
@@ -47,14 +55,13 @@ object TrackRecorder {
             phase = Phase.RECORDING,
             pausedTotalSec = s.pausedTotalSec + added,
             pausedAt = 0L,
-            skipNextPoint = true // ✅ ignora il primo fix appena riparti
+            skipNextPoint = true
         )
+        variance = -1.0
     }
 
     fun stop(stoppedAt: Long) {
         val s = _state.value
-
-        // se stai stoppando da PAUSED, conteggia anche l’ultima pausa
         val extra = if (s.phase == Phase.PAUSED && s.pausedAt > 0L)
             ((stoppedAt - s.pausedAt) / 1000L).coerceAtLeast(0L)
         else 0L
@@ -70,43 +77,59 @@ object TrackRecorder {
 
     fun reset() {
         _state.value = State()
+        variance = -1.0
     }
 
-    fun appendPoints(newPoints: List<LatLng>) {
+    private fun kalmanFilter(lat: Double, lng: Double, accuracy: Float): LatLng {
+        if (variance < 0) {
+            lastLat = lat
+            lastLng = lng
+            variance = (accuracy * accuracy).toDouble()
+            return LatLng(lat, lng)
+        }
+
+        val processNoise = 0.125
+        variance += processNoise
+        val k = variance / (variance + (accuracy * accuracy))
+        
+        lastLat += k * (lat - lastLat)
+        lastLng += k * (lng - lastLng)
+        variance *= (1 - k)
+        
+        return LatLng(lastLat, lastLng)
+    }
+
+    fun appendPointWithExtra(loc: Location) {
         val s = _state.value
         if (s.phase != Phase.RECORDING) return
-        if (newPoints.isEmpty()) return
 
-        // ✅ se ho appena fatto resume, ignoro 1 fix (evita “strappo” iniziale)
         if (s.skipNextPoint) {
             _state.value = s.copy(skipNextPoint = false)
             return
         }
 
-        val old = s.points
-        val merged = old + newPoints
+        val filteredPoint = kalmanFilter(loc.latitude, loc.longitude, loc.accuracy.coerceAtLeast(5f))
 
-        var added = 0.0
-        val all = merged
-        val startIdx = (all.size - newPoints.size - 1).coerceAtLeast(0)
+        val oldPoints = s.points
+        if (oldPoints.isNotEmpty()) {
+            val lastPoint = oldPoints.last()
+            val dist = distanceMeters(lastPoint, filteredPoint)
 
-        for (i in (startIdx + 1) until all.size) {
-            val a = all[i - 1]
-            val b = all[i]
-            val res = FloatArray(1)
-            android.location.Location.distanceBetween(
-                a.latitude, a.longitude,
-                b.latitude, b.longitude,
-                res
+            if (dist < 2.0 || dist > 250.0) return
+
+            val merged = oldPoints + filteredPoint
+            _state.value = s.copy(
+                points = merged,
+                distanceMeters = s.distanceMeters + dist
             )
-
-            // filtro anti-“teletrasporto”: se > 150m in 2s (o salto GPS), non aggiungo distanza
-            if (res[0] <= 150f) added += res[0].toDouble()
+        } else {
+            _state.value = s.copy(points = listOf(filteredPoint))
         }
+    }
 
-        _state.value = s.copy(
-            points = merged,
-            distanceMeters = s.distanceMeters + added
-        )
+    private fun distanceMeters(p1: LatLng, p2: LatLng): Double {
+        val res = FloatArray(1)
+        Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, res)
+        return res[0].toDouble()
     }
 }

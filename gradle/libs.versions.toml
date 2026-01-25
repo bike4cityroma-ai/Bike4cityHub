@@ -7,7 +7,6 @@ navigation = "2.9.4"
 firebaseBom = "34.7.0"
 googleServices = "4.4.4"
 
-mapsCompose = "6.12.2"
 playServicesLocation = "21.3.0"
 
 secretsPlugin = "2.0.1"
@@ -60,9 +59,6 @@ firebase-storage = { group = "com.google.firebase", name = "firebase-storage-ktx
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging-ktx" }
 
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
-
-maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
-maps-compose-utils = { group = "com.google.maps.android", name = "maps-compose-utils", version.ref = "mapsCompose" }
 
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
