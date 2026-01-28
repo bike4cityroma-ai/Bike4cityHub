@@ -1,13 +1,21 @@
 package it.bike4city.hub.tracking
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.google.android.gms.location.*
-import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import it.bike4city.hub.MainActivity
 import it.bike4city.hub.R
 
@@ -63,7 +71,6 @@ class TrackRecordingService : Service() {
     }
 
     private fun startRecording() {
-        // se per qualche motivo esiste già un callback, non ripartire (evita doppio stream GPS)
         if (callback != null) return
 
         val s = TrackRecorder.state.value
@@ -77,12 +84,12 @@ class TrackRecordingService : Service() {
     }
 
     private fun pauseRecording() {
-        // ✅ FIX: prima cambi lo stato (così anche eventuali ultimi fix GPS vengono ignorati)
         if (!TrackRecorder.state.value.isRecording) return
 
         TrackRecorder.pause(System.currentTimeMillis())
 
         callback?.let { fused.removeLocationUpdates(it) }
+        callback = null
         updateNotification()
     }
 
@@ -95,18 +102,21 @@ class TrackRecordingService : Service() {
     }
 
     private fun stopRecording() {
-        // stop deve sempre fermare gli updates e “staccare” il callback
         callback?.let { fused.removeLocationUpdates(it) }
         callback = null
 
         TrackRecorder.stop(System.currentTimeMillis())
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= 24) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
     }
 
     private fun startLocationUpdatesAgain() {
-        // sicurezza: se callback già esiste, non crearne un altro
         if (callback != null) return
 
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
@@ -115,8 +125,9 @@ class TrackRecordingService : Service() {
 
         val cb = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                val pts = result.locations.map { LatLng(it.latitude, it.longitude) }
-                TrackRecorder.appendPoints(pts)
+                result.locations.forEach { loc ->
+                    TrackRecorder.appendPoints(listOf(com.google.android.gms.maps.model.LatLng(loc.latitude, loc.longitude)))
+                }
             }
         }
 
@@ -124,7 +135,6 @@ class TrackRecordingService : Service() {
         try {
             fused.requestLocationUpdates(req, cb, mainLooper)
         } catch (e: SecurityException) {
-            // se mancano permessi, chiudi tutto
             stopRecording()
         }
     }

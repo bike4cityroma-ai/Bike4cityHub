@@ -10,15 +10,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -47,12 +41,9 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Route
-import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -69,7 +60,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -89,17 +79,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -111,7 +103,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import coil.compose.AsyncImage
 import it.bike4city.hub.data.FirebaseRepo
 import it.bike4city.hub.data.Route
 import it.bike4city.hub.data.UserProfileWeb
@@ -221,7 +212,8 @@ private fun AppRoot() {
                     startDestination = "home",
                     modifier = Modifier.padding(padding)
                 ) {
-                    composable("home") { HomeScreen() }
+                    composable("home") { HomeScreen(nav = nav) }
+                    composable("board_all") { BoardAllScreen(nav = nav) }
                     composable("info") { InfoScreen(nav = nav) }
 
                     // Nested navigation for routes
@@ -396,11 +388,17 @@ private fun LoginScreen(
     }
 }
 @Composable
-private fun HomeScreen() {
+private fun HomeScreen(nav: NavHostController) {
     val pageBg = Color(0xFFFFF8E1) // bianco avorio
     Surface(Modifier.fillMaxSize(), color = pageBg) {
+
         val messages by FirebaseRepo.observeBoardMessages().collectAsState(initial = emptyList())
         val formatter = remember { SimpleDateFormat("dd/MM/yyyy 'alle' HH:mm", Locale.ITALY) }
+
+        val latest5 = remember(messages) { messages.take(5) }
+
+        val ctx = LocalContext.current
+        var selected by remember { mutableStateOf<it.bike4city.hub.data.BoardMessage?>(null) }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -408,23 +406,39 @@ private fun HomeScreen() {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text("Bacheca", style = MaterialTheme.typography.headlineMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Bacheca", style = MaterialTheme.typography.headlineMedium)
+                    TextButton(onClick = { nav.navigate("board_all") }) { Text("Vedi tutti") }
+                }
             }
+
             if (messages.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Nessun messaggio ancora.")
-                        }
+                        Column(Modifier.padding(16.dp)) { Text("Nessun messaggio ancora.") }
                     }
                 }
             } else {
-                items(messages) { msg ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+
+                items(latest5) { msg ->
+                    val fullText = boardMessageText(msg)
+                    val preview = fullText.replace(Regex("\\s+"), " ").trim().let {
+                        if (it.length > 180) it.take(180) + "…" else it
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selected = msg }
+                    ) {
                         Column(Modifier.padding(16.dp)) {
                             Text(msg.title, style = MaterialTheme.typography.titleLarge)
                             Spacer(Modifier.height(6.dp))
-                            Text(msg.body)
+                            Text(preview, maxLines = 4, overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.height(8.dp))
                             val date = msg.createdAt?.let { formatter.format(it) } ?: ""
                             Text(
@@ -435,10 +449,238 @@ private fun HomeScreen() {
                         }
                     }
                 }
+
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Tutti i messaggi", style = MaterialTheme.typography.titleMedium)
+                            Button(onClick = { nav.navigate("board_all") }) { Text("Apri") }
+                        }
+                    }
+                }
             }
+        }
+
+        selected?.let { msg ->
+            val fullText = boardMessageText(msg)
+            val annotated = remember(fullText) { buildLinkifiedText(fullText) }
+            val date = msg.createdAt?.let { formatter.format(it) } ?: ""
+
+            AlertDialog(
+                onDismissRequest = { selected = null },
+                title = {
+                    Column {
+                        Text(msg.title, style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "di ${msg.authorName}${if (date.isNotBlank()) " • $date" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                text = {
+                    ClickableText(
+                        text = annotated,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                        onClick = { offset ->
+                            annotated.getStringAnnotations("LINK", offset, offset)
+                                .firstOrNull()?.let { ann -> openLink(ctx, ann.item) }
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { selected = null }) { Text("Chiudi") }
+                }
+            )
         }
     }
 }
+
+
+private fun boardMessageText(msg: it.bike4city.hub.data.BoardMessage): String {
+    val t = msg.contentPlain.trim()
+    return if (t.isNotBlank()) t else msg.body.trim()
+}
+
+private fun buildLinkifiedText(text: String): AnnotatedString {
+    val urlRegex = Regex("""\b(https?://[^\s]+|www\.[^\s]+)\b""", RegexOption.IGNORE_CASE)
+    val emailRegex = Regex("""\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b""", RegexOption.IGNORE_CASE)
+
+    return buildAnnotatedString {
+        var i = 0
+        val matches = (urlRegex.findAll(text).map { it.range to "url" } +
+                emailRegex.findAll(text).map { it.range to "email" })
+            .sortedBy { it.first.first }
+
+        for ((range, kind) in matches) {
+            if (range.first < i) continue
+            if (range.first > i) append(text.substring(i, range.first))
+
+            val raw = text.substring(range.first, range.last + 1)
+            val target = when (kind) {
+                "email" -> "mailto:$raw"
+                else -> if (raw.startsWith("http", true)) raw else "https://$raw"
+            }
+
+            pushStringAnnotation(tag = "LINK", annotation = target)
+            withStyle(
+                SpanStyle(
+                    textDecoration = TextDecoration.Underline,
+                    fontWeight = FontWeight.Medium
+                )
+            ) {
+                append(raw)
+            }
+            pop()
+
+            i = range.last + 1
+        }
+
+        if (i < text.length) append(text.substring(i))
+    }
+}
+
+private fun openLink(context: android.content.Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(context, "Impossibile aprire il link", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BoardAllScreen(nav: NavHostController) {
+    val pageBg = Color(0xFFFFF8E1)
+    val ctx = LocalContext.current
+
+    val messages by FirebaseRepo.observeBoardMessages().collectAsState(initial = emptyList())
+    val formatter = remember { SimpleDateFormat("dd/MM/yyyy 'alle' HH:mm", Locale.ITALY) }
+
+    var q by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<it.bike4city.hub.data.BoardMessage?>(null) }
+
+    val filtered = remember(messages, q) {
+        val term = q.trim().lowercase(Locale.ITALY)
+        if (term.isBlank()) messages
+        else messages.filter {
+            it.title.lowercase(Locale.ITALY).contains(term) ||
+                    boardMessageText(it).lowercase(Locale.ITALY).contains(term)
+        }
+    }
+
+    Scaffold(
+        containerColor = pageBg,
+        topBar = {
+            TopAppBar(
+                title = { Text("Tutti i messaggi") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Indietro")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            OutlinedTextField(
+                value = q,
+                onValueChange = { q = it },
+                label = { Text("Cerca") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (filtered.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) { Text("Nessun messaggio.") }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(filtered) { msg ->
+                        val fullText = boardMessageText(msg)
+                        val preview = fullText.replace(Regex("\\s+"), " ").trim().let {
+                            if (it.length > 180) it.take(180) + "…" else it
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selected = msg }
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(msg.title, style = MaterialTheme.typography.titleLarge)
+                                Spacer(Modifier.height(6.dp))
+                                Text(preview, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(8.dp))
+                                val date = msg.createdAt?.let { formatter.format(it) } ?: ""
+                                Text(
+                                    "Pubblicato da ${msg.authorName} il $date",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        selected?.let { msg ->
+            val fullText = boardMessageText(msg)
+            val annotated = remember(fullText) { buildLinkifiedText(fullText) }
+            val date = msg.createdAt?.let { formatter.format(it) } ?: ""
+
+            AlertDialog(
+                onDismissRequest = { selected = null },
+                title = {
+                    Column {
+                        Text(msg.title, style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "di ${msg.authorName}${if (date.isNotBlank()) " • $date" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                text = {
+                    ClickableText(
+                        text = annotated,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                        onClick = { offset ->
+                            annotated.getStringAnnotations("LINK", offset, offset)
+                                .firstOrNull()?.let { ann -> openLink(ctx, ann.item) }
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { selected = null }) { Text("Chiudi") }
+                }
+            )
+        }
+    }
+}
+
 
 @Composable
 private fun ProfileScreen(
@@ -483,7 +725,7 @@ private fun ProfileScreen(
                 item {
                     MembershipCard(profile!!)
                 }
-                
+
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -517,7 +759,7 @@ private fun ProfileScreen(
             item {
                 OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Esci") }
             }
-            
+
             item {
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -567,7 +809,7 @@ private fun MembershipCard(profile: UserProfileWeb) {
     }
 
     // Colore scuro ufficiale Bike4City
-    val textColor = Color(0xFF1B5E20) 
+    val textColor = Color(0xFF1B5E20)
 
     Card(
         modifier = Modifier
@@ -591,7 +833,7 @@ private fun MembershipCard(profile: UserProfileWeb) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "TESSERA SOCIO", 
+                    "TESSERA SOCIO",
                     style = MaterialTheme.typography.labelMedium,
                     color = textColor.copy(alpha = 0.7f),
                     fontWeight = FontWeight.Bold
@@ -600,21 +842,21 @@ private fun MembershipCard(profile: UserProfileWeb) {
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    fullName.uppercase(), 
+                    fullName.uppercase(),
                     style = MaterialTheme.typography.headlineSmall,
                     color = textColor,
                     fontWeight = FontWeight.ExtraBold
                 )
-                
+
                 Text(
-                    "N. tessera: $numero", 
+                    "N. tessera: $numero",
                     style = MaterialTheme.typography.titleMedium,
                     color = textColor,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 Text(
-                    "Validità: fino al $validUntil", 
+                    "Validità: fino al $validUntil",
                     style = MaterialTheme.typography.bodyMedium,
                     color = textColor.copy(alpha = 0.9f),
                     fontWeight = FontWeight.Medium
@@ -991,7 +1233,7 @@ private fun MyRoutesListScreen(uid: String, nav: NavHostController) {
 private fun OfficialRoutesListScreen(nav: NavHostController) {
     val pageBg = Color(0xFFF5F5F5)
     var selectedTab by remember { mutableIntStateOf(0) }
-    
+
     val official by FirebaseRepo.observeOfficialRoutes().collectAsState(initial = emptyList())
     val community by FirebaseRepo.observeCommunityRoutes().collectAsState(initial = emptyList())
 
@@ -1023,7 +1265,7 @@ private fun OfficialRoutesListScreen(nav: NavHostController) {
         }
     ) { padding ->
         val currentList = if (selectedTab == 0) official else community
-        
+
         if (currentList.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
@@ -1058,14 +1300,14 @@ private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    
+
                     // Badge categoria
                     if (route.b4cCategory != null) {
                         Spacer(Modifier.width(8.dp))
                         CategoryBadge(route.b4cCategory!!)
                     }
                 }
-                
+
                 Spacer(Modifier.height(4.dp))
                 val km = ((route.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
                 Text(
@@ -1074,7 +1316,7 @@ private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
+
             if (onEdit != null) {
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = "Modifica")
@@ -1294,7 +1536,7 @@ private fun RecordRouteScreen() {
         Box(Modifier.weight(1f)) {
             ThunderforestMapLibre(
                 modifier = Modifier.fillMaxSize(),
-                points = rec.points,
+                points = remember(rec.points) { rec.points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) } },
                 showMyLocation = hasLocation,
                 followMyLocation = rec.isRecording
             )
@@ -1408,14 +1650,19 @@ private fun ViewRouteScreen(routeId: String) {
         return
     }
 
-    val points = remember(route!!.gpxText) {
-        runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
+    val points: List<com.google.android.gms.maps.model.LatLng> = remember(route!!.gpxText) {
+        runCatching { GpxParser.parse(route!!.gpxText).points }
+            .getOrElse { emptyList<com.google.android.gms.maps.model.LatLng>() }
+    }
+
+    val mapLibrePoints: List<org.maplibre.android.geometry.LatLng> = remember(points) {
+        points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
     }
 
     val ctx = LocalContext.current
 
     // engine & TTS: li ricreiamo quando cambia il percorso
-    val engine = remember(points) { TrackNavigationEngine(points = points) }
+    val engine = remember(points) { TrackNavigationEngine(points = mapLibrePoints) }
     val tts = remember { TtsCoach(ctx) }
     LaunchedEffect(muted) { tts.muted = muted }
 
@@ -1451,12 +1698,12 @@ private fun ViewRouteScreen(routeId: String) {
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
-            if (points.isNotEmpty()) {
+            if (mapLibrePoints.isNotEmpty()) {
                 val boundsBuilder = LatLngBounds.Builder()
-                points.forEach { boundsBuilder.include(org.maplibre.android.geometry.LatLng(it.latitude, it.longitude)) }
+                mapLibrePoints.forEach { boundsBuilder.include(it) }
                 ThunderforestMapLibre(
                     modifier = Modifier.fillMaxSize(),
-                    points = points,
+                    points = mapLibrePoints,
                     initialBounds = boundsBuilder.build(),
                     showMyLocation = hasLocation,
                     // ✅ di default centra il percorso; quando attivi “Segui”, allora segue te
@@ -1499,7 +1746,7 @@ private fun ViewRouteScreen(routeId: String) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        route!!.title.ifBlank { "Percorso" }, 
+                        route!!.title.ifBlank { "Percorso" },
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f)
                     )
@@ -1507,14 +1754,14 @@ private fun ViewRouteScreen(routeId: String) {
                         CategoryBadge(route!!.b4cCategory!!)
                     }
                 }
-                
+
                 val km = ((route!!.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
                 val diffTxt = prettyDifficulty(route!!.difficulty)
                 val ascentTxt = prettyMeters(route!!.ascentM)
                 Text("Distanza: $km km")
                 Text("Difficoltà: $diffTxt")
                 Text("Dislivello: $ascentTxt")
-                
+
                 if (route!!.b4cCategory == "BIKE4CITY") {
                     Text("Percorso ufficiale dell'associazione", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                 } else if (route!!.b4cCategory == "COMMUNITY") {
@@ -1626,47 +1873,95 @@ private fun InfoScreen(nav: NavHostController) {
 
             InfoCard("Chi siamo") {
                 Text(
-                    "Bike4City Hub è un project indipendente di Bike4City APS per promuovere mobilità sostenibile, sicurezza stradale e cicloturismo urbano.\n\n" +
-                            "Crediamo che la città si capisci meglio a pedali. E se la capisci meglio, la pretendi migliore."
+                    "Bike4City Hub è un progetto indipendente promosso da Bike4City APS.\n\n" +
+                            "Nasce per promuovere una mobilità urbana più sicura, sostenibile e accessibile, " +
+                            "mettendo la bicicletta al centro come strumento di trasformazione sociale, culturale e politica.\n\n" +
+                            "Crediamo che la città si capisca meglio a pedali. " +
+                            "E quando la capisci davvero, la pretendi migliore: " +
+                            "più vivibile, più sicura, meno inquinata, più umana."
                 )
             }
 
             InfoCard("Dati personali e privacy") {
                 Text(
-                    "L’app utilizza la posizione GPS solo quando necessario per mostrare la tua posizione o registrare un percorso.\n\n" +
-                            "Non vendiamo dati, non facciamo profilazione pubblicitaria e non tracciamo gli utenti a fini commerciali.\n\n" +
-                            "Se attive funzioni di salvataggio/sincronizzazione, alcuni dati possono essere archiviati su servizi cloud (es. Firebase)."
+                    "Bike4City Hub rispetta la tua privacy.\n\n" +
+                            "L’app utilizza la posizione GPS solo quando necessario " +
+                            "per mostrare la tua posizione, registrare o seguire un percorso.\n\n" +
+                            "Non vendiamo dati, non facciamo profilazione pubblicitaria " +
+                            "e non tracciamo gli utenti a fini commerciali.\n\n" +
+                            "Alcuni dati tecnici possono essere archiviati su servizi cloud " +
+                            "(come Firebase) esclusivamente per garantire il funzionamento dell’app."
                 )
             }
 
             InfoCard("I tuoi diritti") {
                 Text(
-                    "Puoi chiedere accesso, cancellazione ed esportazione dei tuoi dati (dove applicabile).\n\n" +
-                            "Scrivici: rispondiamo in modo umano, non burocratico."
+                    "Hai il diritto di accedere, modificare o richiedere la cancellazione dei tuoi dati personali.\n\n" +
+                            "Puoi inoltre richiedere informazioni sull’utilizzo dei dati " +
+                            "e sul funzionamento della piattaforma.\n\n" +
+                            "Scrivici senza timore: rispondiamo in modo umano, non burocratico."
                 )
             }
 
             InfoCard("Tracce e responsabilità") {
                 Text(
-                    "Le tracce che crei restano tue.\n\n" +
-                            "L’app è un supporto: non sostituisce il Codice della Strada, il buon senso e la valutazione dei rischi."
+                    "Le tracce e i contenuti che crei restano tuoi.\n\n" +
+                            "Bike4City Hub è uno strumento di supporto alla navigazione e alla condivisione, " +
+                            "ma non sostituisce il Codice della Strada, " +
+                            "il buon senso e la valutazione autonoma delle condizioni ambientali e di sicurezza.\n\n" +
+                            "Pedala in modo consapevole e responsabile."
                 )
             }
 
             InfoCard("Riconoscimenti") {
-                Text(
-                    "• OpenStreetMap e contributori\n" +
-                            "• MapLibre\n" +
-                            "• Firebase\n" +
-                            "• Provider mappe (es. Thunderforest)\n\n" +
-                            "Marchi e loghi appartengono ai rispettivi proprietari."
+                val ctx = LocalContext.current
+                val linkColor = MaterialTheme.colorScheme.primary
+
+                val annotated = buildAnnotatedString {
+                    fun link(label: String, url: String) {
+                        pushStringAnnotation(tag = "URL", annotation = url)
+                        withStyle(
+                            SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Medium
+                            )
+                        ) { append(label) }
+                        pop()
+                    }
+
+                    append("Bike4City Hub utilizza strumenti open source e servizi di terze parti:\n\n")
+
+                    append("• "); link("OpenStreetMap", "https://www.openstreetmap.org/copyright"); append(" e contributori\n")
+                    append("• "); link("MapLibre", "https://maplibre.org"); append(" (visualizzazione cartografica)\n")
+                    append("• "); link("Firebase", "https://firebase.google.com"); append(" (autenticazione e servizi cloud)\n")
+                    append("• "); link("Thunderforest", "https://www.thunderforest.com"); append(" (provider mappe)\n\n")
+
+                    append("Marchi, nomi e loghi appartengono ai rispettivi proprietari.\n")
+                    append("L’utilizzo avviene nel rispetto delle relative licenze.")
+                }
+
+                ClickableText(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodyMedium,
+                    onClick = { offset ->
+                        annotated.getStringAnnotations("URL", offset, offset)
+                            .firstOrNull()
+                            ?.let { ann ->
+                                try {
+                                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.item)))
+                                } catch (_: Exception) {
+                                    Toast.makeText(ctx, "Impossibile aprire il link", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                    }
                 )
             }
 
             InfoCard("Contatti") {
                 val ctx = LocalContext.current
 
-                val email = "info.hub@bike4city.org"
+                val email = "admin.hub@bike4city.it"
                 Text(
                     text = "Email: $email",
                     modifier = Modifier.clickable {
@@ -1679,9 +1974,9 @@ private fun InfoScreen(nav: NavHostController) {
                     textDecoration = TextDecoration.Underline
                 )
 
-                val site = "https://bike4city.org"
+                val site = "https://bike4city.it"
                 Text(
-                    text = "Sito: bike4city.org",
+                    text = "Sito: bike4city.it",
                     modifier = Modifier.clickable {
                         val i = Intent(Intent.ACTION_VIEW, Uri.parse(site))
                         ctx.startActivity(i)
@@ -1694,7 +1989,7 @@ private fun InfoScreen(nav: NavHostController) {
 
             Spacer(Modifier.height(12.dp))
             Text(
-                "Ultimo aggiornamento: 12-2025",
+                "Ultimo aggiornamento: 01-2026",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

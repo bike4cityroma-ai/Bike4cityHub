@@ -42,6 +42,11 @@
             android:foregroundServiceType="location" />
 
         <service
+            android:name=".ui.route.NavigationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false"
             tools:node="merge">

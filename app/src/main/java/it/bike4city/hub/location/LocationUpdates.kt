@@ -8,7 +8,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -37,7 +37,7 @@ object LocationUpdates {
                 // Ignora gli aggiornamenti con scarsa accuratezza per evitare "zigzag"
                 if (loc.accuracy > ACCURACY_THRESHOLD_METERS) return
 
-                trySend(LatLng(loc.latitude, loc.longitude))
+                trySend(LatLng(loc.latitude, loc.longitude, loc.altitude))
             }
         }
 

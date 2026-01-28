@@ -1,6 +1,6 @@
 package it.bike4city.hub.navigation
 
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 import kotlin.math.abs
 
 object ManeuverGenerator {

@@ -11,13 +11,21 @@ import java.util.Date
 @IgnoreExtraProperties
 data class BoardMessage(
     val title: String = "",
+
+    // ✅ nuovo campo (web Quill)
+    val contentPlain: String = "",
+
+    // legacy (vecchi messaggi)
     val body: String = "",
+
     val authorUid: String = "",
     val authorName: String = "",
     val status: String = "published",
     @ServerTimestamp val createdAt: Date? = null,
     @ServerTimestamp val updatedAt: Date? = null
-)
+) {
+    @get:Exclude var id: String = ""
+}
 
 /* -----------------------------
  * PROFILO (NUOVO) - ALLINEATO AL WEB
@@ -104,7 +112,7 @@ data class Route(
     var distanceKm: Double? = 0.0,
     var ascentM: Double? = 0.0,
     var descentM: Double? = 0.0,
-    
+
     var bbox: List<String>? = null,
     var poiCount: Int = 0,
     var status: String = "",            // "public", "accepted", "recorded", ecc.
@@ -116,8 +124,8 @@ data class Route(
 
     var ownerUid: String? = null,
     var createdByUid: String? = null,
-    
-    var suggestedByUid: String? = null, 
+
+    var suggestedByUid: String? = null,
     var suggestedByName: String? = null,
     var suggestedByEmail: String? = null,
     var publishedMemberRouteId: String? = null,
@@ -126,7 +134,7 @@ data class Route(
     var routeType: String? = null,
     var surfaceType: String? = null,
     var surfaceStats: Any? = null,
-    
+
     var difficulty: String? = null,
     var isOfficial: Boolean = false,
     var routeMode: String? = null
