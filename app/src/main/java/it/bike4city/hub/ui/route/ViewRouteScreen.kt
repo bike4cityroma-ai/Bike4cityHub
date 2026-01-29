@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
@@ -77,7 +76,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -96,8 +94,8 @@ object NavigationState {
     val isMuted: StateFlow<Boolean> = _isMuted
 
     fun startFollowing() { _isFollowing.value = true }
-    fun stopFollowing() { 
-        _isFollowing.value = false 
+    fun stopFollowing() {
+        _isFollowing.value = false
         _currentUpdate.value = null
     }
     fun update(up: NavigationUpdate) { _currentUpdate.value = up }
@@ -137,13 +135,14 @@ class NavigationService : Service() {
         }
 
         val routeId = intent?.getStringExtra("routeId") ?: return START_NOT_STICKY
-        
+
         serviceScope.launch {
             val route = FirebaseRepo.loadRoute(routeId)
             if (route != null) {
                 val points = runCatching { GpxParser.parse(route.gpxText).points }.getOrElse { emptyList() }
-                if (points.size >= 2) {
-                    engine = TrackNavigationEngine(points)
+                val mapLibrePoints = points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
+                if (mapLibrePoints.size >= 2) {
+                    engine = TrackNavigationEngine(mapLibrePoints)
                     tts = TtsCoach(this@NavigationService)
                     startForeground(NOTIF_ID, buildNotification("Inizializzazione..."))
                     startNavigationLoop()
@@ -166,7 +165,7 @@ class NavigationService : Service() {
                     stopNavigation()
                     return@collect
                 }
-                
+
                 val up = engine?.update(pos) ?: return@collect
                 NavigationState.update(up)
                 tts?.muted = NavigationState.isMuted.value
@@ -210,11 +209,11 @@ class NavigationService : Service() {
     private fun buildNotification(text: String): android.app.Notification {
         ensureChannel()
         val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), 
+            this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val stopIntent = PendingIntent.getService(
-            this, 1, Intent(this, NavigationService::class.java).setAction(ACTION_STOP), 
+            this, 1, Intent(this, NavigationService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -281,23 +280,28 @@ fun ViewRouteScreen(routeId: String) {
         runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
     }
 
+
+
+    val mapLibrePoints = remember(points) {
+        points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
+    }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
-            if (points.isNotEmpty()) {
+            if (mapLibrePoints.isNotEmpty()) {
                 val boundsBuilder = LatLngBounds.Builder()
-                points.forEach { boundsBuilder.include(it) }
-                
-                val start = points.firstOrNull()
-                val finish = points.lastOrNull()
-                
+                mapLibrePoints.forEach { boundsBuilder.include(it) }
+
+                val start = mapLibrePoints.firstOrNull()
+                val finish = mapLibrePoints.lastOrNull()
+
                 // Progress marker basato sullo stato globale
                 val progressPoint = navUpdate?.let { up ->
-                    points.getOrNull(up.progressIndex)
+                    mapLibrePoints.getOrNull(up.progressIndex)
                 }
 
                 ThunderforestMapLibre(
                     modifier = Modifier.fillMaxSize(),
-                    points = points,
+                    points = mapLibrePoints,
                     startPoint = start,
                     finishPoint = finish,
                     progressPoint = progressPoint,
@@ -328,7 +332,7 @@ fun ViewRouteScreen(routeId: String) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        route!!.title.ifBlank { "Percorso" }, 
+                        route!!.title.ifBlank { "Percorso" },
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.Bold
@@ -337,7 +341,7 @@ fun ViewRouteScreen(routeId: String) {
                         CategoryBadge(route!!.b4cCategory!!)
                     }
                 }
-                
+
                 val km = ((route!!.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
                 val remainingKm = if (following && navUpdate != null) {
                     (navUpdate!!.remainingDistanceMeters / 1000.0 * 10).roundToInt() / 10.0

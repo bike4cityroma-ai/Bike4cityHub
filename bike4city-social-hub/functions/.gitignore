@@ -1,6 +1,0 @@
-node_modules/
-lib/
-.firebase/
-*.log
-serviceAccountKey_old.json
-serviceAccountKey.json
