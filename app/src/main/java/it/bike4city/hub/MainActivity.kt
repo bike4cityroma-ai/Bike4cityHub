@@ -1650,9 +1650,11 @@ private fun ViewRouteScreen(routeId: String) {
         return
     }
 
-    val points: List<com.google.android.gms.maps.model.LatLng> = remember(route!!.gpxText) {
-        runCatching { GpxParser.parse(route!!.gpxText).points }
-            .getOrElse { emptyList<com.google.android.gms.maps.model.LatLng>() }
+    val points = remember(route!!.gpxText) {
+        runCatching {
+            GpxParser.parse(route!!.gpxText).points
+                .mapNotNull { it as? org.maplibre.android.geometry.LatLng }
+        }.getOrElse { emptyList() }
     }
 
     val mapLibrePoints: List<org.maplibre.android.geometry.LatLng> = remember(points) {
