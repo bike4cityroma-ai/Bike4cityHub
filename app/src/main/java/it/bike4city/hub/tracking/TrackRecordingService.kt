@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -18,6 +19,13 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import it.bike4city.hub.MainActivity
 import it.bike4city.hub.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlin.math.roundToInt
 
 class TrackRecordingService : Service() {
 
@@ -53,6 +61,7 @@ class TrackRecordingService : Service() {
 
     private lateinit var fused: FusedLocationProviderClient
     private var callback: LocationCallback? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()
@@ -79,8 +88,19 @@ class TrackRecordingService : Service() {
         val startedAt = System.currentTimeMillis()
         TrackRecorder.startNew(startedAt)
 
-        startForeground(NOTIF_ID, buildNotification())
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+
         startLocationUpdatesAgain()
+        
+        // Monitora lo stato per aggiornare la distanza nella notifica
+        TrackRecorder.state
+            .onEach { updateNotification() }
+            .launchIn(serviceScope)
     }
 
     private fun pauseRecording() {
@@ -119,14 +139,19 @@ class TrackRecordingService : Service() {
     private fun startLocationUpdatesAgain() {
         if (callback != null) return
 
-        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
-            .setMinUpdateDistanceMeters(5f)
+        // Ottimizzato per la bici: aggiornamenti ogni 2.5 secondi, minimo 3 metri
+        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
+            .setMinUpdateIntervalMillis(1500L)
+            .setMinUpdateDistanceMeters(3f)
             .build()
 
         val cb = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.locations.forEach { loc ->
-                    TrackRecorder.appendPointWithExtra(loc)
+                    // Accettiamo solo punti con precisione accettabile (< 40m)
+                    if (loc.accuracy < 40f) {
+                        TrackRecorder.appendPointWithExtra(loc)
+                    }
                 }
             }
         }
@@ -146,7 +171,7 @@ class TrackRecordingService : Service() {
             this,
             0,
             Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val stopIntent = PendingIntent.getService(
@@ -166,11 +191,14 @@ class TrackRecordingService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        val text = when {
-            s.isRecording -> "Registrazione attiva"
+        val km = (s.distanceMeters / 1000.0 * 10).roundToInt() / 10.0
+        val status = when {
+            s.isRecording -> "In movimento"
             s.isPaused -> "In pausa"
             else -> "Registrazione"
         }
+        
+        val text = "$status • $km km percorsi"
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -197,6 +225,11 @@ class TrackRecordingService : Service() {
             NotificationManager.IMPORTANCE_LOW
         )
         mgr.createNotificationChannel(ch)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

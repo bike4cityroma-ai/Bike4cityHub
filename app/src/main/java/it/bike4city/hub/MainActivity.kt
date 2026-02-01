@@ -267,6 +267,7 @@ private fun WelcomeScreenV2(
         modifier = Modifier.fillMaxSize(),
         color = bg
     ) {
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { _ -> }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1651,13 +1652,10 @@ private fun ViewRouteScreen(routeId: String) {
     }
 
     val points = remember(route!!.gpxText) {
-        runCatching {
-            GpxParser.parse(route!!.gpxText).points
-                .mapNotNull { it as? org.maplibre.android.geometry.LatLng }
-        }.getOrElse { emptyList() }
+        runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
     }
 
-    val mapLibrePoints: List<org.maplibre.android.geometry.LatLng> = remember(points) {
+    val mapLibrePoints = remember(points) {
         points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
     }
 
@@ -1875,43 +1873,38 @@ private fun InfoScreen(nav: NavHostController) {
 
             InfoCard("Chi siamo") {
                 Text(
-                    "Bike4City Hub è un progetto indipendente promosso da Bike4City APS.\n\n" +
-                            "Nasce per promuovere una mobilità urbana più sicura, sostenibile e accessibile, " +
-                            "mettendo la bicicletta al centro come strumento di trasformazione sociale, culturale e politica.\n\n" +
-                            "Crediamo che la città si capisca meglio a pedali. " +
-                            "E quando la capisci davvero, la pretendi migliore: " +
-                            "più vivibile, più sicura, meno inquinata, più umana."
+                    "Bike4City Hub è un progetto indipendente promosso da Bike4City APS.\n" +
+                            "Nasce per sostenere una mobilità più giusta, sicura e accessibile, mettendo al centro la bicicletta come strumento di cambiamento urbano, culturale e sociale.\n\n" +
+                            "Crediamo che la città si capisca meglio a pedali.\n" +
+                            "E quando la capisci davvero, non puoi fare a meno di pretenderla migliore:\n" +
+                            "più sicura, più vivibile, meno inquinata, più umana.\n\n" +
+                            "Bike4City Hub è uno spazio condiviso dove soci e cittadini possono:\n\n" +
+                            "• esplorare e condividere percorsi ciclabili urbani e cicloturistici\n" +
+                            "• segnalare criticità e buone pratiche sul territorio\n" +
+                            "• contribuire a una mappa collettiva della città reale, vissuta, pedalata\n\n" +
+                            "Non è solo un’app: è uno strumento di partecipazione attiva e di cittadinanza consapevole."
                 )
             }
 
             InfoCard("Dati personali e privacy") {
                 Text(
-                    "Bike4City Hub rispetta la tua privacy.\n\n" +
-                            "L’app utilizza la posizione GPS solo quando necessario " +
-                            "per mostrare la tua posizione, registrare o seguire un percorso.\n\n" +
-                            "Non vendiamo dati, non facciamo profilazione pubblicitaria " +
-                            "e non tracciamo gli utenti a fini commerciali.\n\n" +
-                            "Alcuni dati tecnici possono essere archiviati su servizi cloud " +
-                            "(come Firebase) esclusivamente per garantire il funzionamento dell’app."
+                    "L’app utilizza la posizione GPS solo quando necessario per mostrare la tua posizione o registrare un percorso.\n\n" +
+                            "Non vendiamo dati, non facciamo profilazione pubblicitaria e non tracciamo gli utenti a fini commerciali.\n\n" +
+                            "Se attive funzioni di salvataggio/sincronizzazione, alcuni dati possono essere archiviati su servizi cloud (es. Firebase)."
                 )
             }
 
             InfoCard("I tuoi diritti") {
                 Text(
-                    "Hai il diritto di accedere, modificare o richiedere la cancellazione dei tuoi dati personali.\n\n" +
-                            "Puoi inoltre richiedere informazioni sull’utilizzo dei dati " +
-                            "e sul funzionamento della piattaforma.\n\n" +
-                            "Scrivici senza timore: rispondiamo in modo umano, non burocratico."
+                    "Puoi chiedere accesso, cancellazione ed esportazione dei tuoi dati (dove applicabile).\n\n" +
+                            "Scrivici: rispondiamo in modo umano, non burocratico."
                 )
             }
 
             InfoCard("Tracce e responsabilità") {
                 Text(
-                    "Le tracce e i contenuti che crei restano tuoi.\n\n" +
-                            "Bike4City Hub è uno strumento di supporto alla navigazione e alla condivisione, " +
-                            "ma non sostituisce il Codice della Strada, " +
-                            "il buon senso e la valutazione autonoma delle condizioni ambientali e di sicurezza.\n\n" +
-                            "Pedala in modo consapevole e responsabile."
+                    "Le tracce che crei restano tue.\n\n" +
+                            "L’app è un supporto: non sostituisce il Codice della Strada, il buon senso e la valutazione dei rischi."
                 )
             }
 
@@ -1976,9 +1969,9 @@ private fun InfoScreen(nav: NavHostController) {
                     textDecoration = TextDecoration.Underline
                 )
 
-                val site = "https://bike4city.it"
+                val site = "https://www.bike4city.it"
                 Text(
-                    text = "Sito: bike4city.it",
+                    text = "Sito: www.bike4city.it",
                     modifier = Modifier.clickable {
                         val i = Intent(Intent.ACTION_VIEW, Uri.parse(site))
                         ctx.startActivity(i)
@@ -1991,7 +1984,7 @@ private fun InfoScreen(nav: NavHostController) {
 
             Spacer(Modifier.height(12.dp))
             Text(
-                "Ultimo aggiornamento: 01-2026",
+                "Ultimo aggiornamento: 12-2025",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2014,3 +2007,5 @@ private fun InfoCard(
         }
     }
 }
+
+fun emptyStateList(): List<Route> = emptyList()

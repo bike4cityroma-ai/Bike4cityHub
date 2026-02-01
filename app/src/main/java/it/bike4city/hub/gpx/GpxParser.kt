@@ -1,6 +1,6 @@
 package it.bike4city.hub.gpx
 
-import org.maplibre.android.geometry.LatLng
+import com.google.android.gms.maps.model.LatLng
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
@@ -18,10 +18,6 @@ object GpxParser {
     )
 
     fun parse(gpxContent: String): ParsedGpx {
-        return parseProperly(gpxContent)
-    }
-
-    private fun parseProperly(gpxContent: String): ParsedGpx {
         val factory = XmlPullParserFactory.newInstance()
         val parser = factory.newPullParser()
         parser.setInput(StringReader(gpxContent))
@@ -31,42 +27,32 @@ object GpxParser {
         val pts = ArrayList<LatLng>()
 
         var insideTrk = false
-        var currentLat: Double? = null
-        var currentLon: Double? = null
-        var currentEle: Double? = null
+        var insideName = false
 
         while (event != XmlPullParser.END_DOCUMENT) {
-            val tagName = parser.name?.lowercase()
             when (event) {
                 XmlPullParser.START_TAG -> {
-                    when (tagName) {
+                    when (parser.name.lowercase()) {
                         "trk" -> insideTrk = true
+                        "name" -> if (insideTrk) insideName = true
                         "trkpt" -> {
-                            currentLat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
-                            currentLon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
-                            currentEle = null
-                        }
-                        "ele" -> {
-                            try {
-                                currentEle = parser.nextText()?.toDoubleOrNull()
-                            } catch (e: Exception) {}
-                        }
-                        "name" -> if (insideTrk && trackName == null) {
-                            try {
-                                trackName = parser.nextText()?.take(60)
-                            } catch (e: Exception) {}
+                            val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
+                            val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
+                            if (lat != null && lon != null) pts.add(LatLng(lat, lon))
                         }
                     }
                 }
-                XmlPullParser.END_TAG -> {
-                    if (tagName == "trkpt") {
-                        val lat = currentLat
-                        val lon = currentLon
-                        if (lat != null && lon != null) {
-                            pts.add(LatLng(lat, lon, currentEle ?: 0.0))
-                        }
+                XmlPullParser.TEXT -> {
+                    if (insideName && trackName == null) {
+                        val t = parser.text?.trim()
+                        if (!t.isNullOrBlank()) trackName = t.take(60)
                     }
-                    if (tagName == "trk") insideTrk = false
+                }
+                XmlPullParser.END_TAG -> {
+                    when (parser.name.lowercase()) {
+                        "name" -> insideName = false
+                        "trk" -> insideTrk = false
+                    }
                 }
             }
             event = parser.next()
@@ -92,9 +78,6 @@ object GpxParser {
             points.forEach { p ->
                 val time = iso8601Format.format(Date())
                 append("      <trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\">\n")
-                if (p.altitude != 0.0) {
-                    append("        <ele>${p.altitude}</ele>\n")
-                }
                 append("        <time>$time</time>\n")
                 append("      </trkpt>\n")
             }
@@ -104,6 +87,7 @@ object GpxParser {
         }
         return gpx
     }
+
 
     private fun simplifyByMinStepMeters(points: List<LatLng>, minStepMeters: Double): List<LatLng> {
         if (points.size < 3) return points

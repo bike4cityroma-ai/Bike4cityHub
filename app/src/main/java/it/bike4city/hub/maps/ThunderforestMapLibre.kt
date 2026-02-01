@@ -319,17 +319,28 @@ private fun addIconsToStyle(style: Style) {
 }
 
 private fun createArrowBitmap(): Bitmap {
-    val size = 32
+    val size = 48 // Leggermente più grande per contenere lo stroke
     val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val c = Canvas(b)
     val p = Paint(Paint.ANTI_ALIAS_FLAG)
-    p.color = android.graphics.Color.WHITE
+    
     val path = Path()
-    path.moveTo(size * 0.5f, size * 0.1f)
-    path.lineTo(size * 0.2f, size * 0.8f)
-    path.lineTo(size * 0.8f, size * 0.8f)
+    path.moveTo(size * 0.5f, size * 0.15f)
+    path.lineTo(size * 0.15f, size * 0.85f)
+    path.lineTo(size * 0.85f, size * 0.85f)
     path.close()
+
+    // Stroke scuro per contrasto
+    p.color = android.graphics.Color.BLACK
+    p.style = Paint.Style.STROKE
+    p.strokeWidth = 5f
     c.drawPath(path, p)
+
+    // Riempimento bianco
+    p.color = android.graphics.Color.WHITE
+    p.style = Paint.Style.FILL
+    c.drawPath(path, p)
+    
     return b
 }
 
@@ -386,10 +397,10 @@ private fun ensureTrackLayer(style: Style) {
     if (style.getLayer("track-arrows") == null) {
         val layer = SymbolLayer("track-arrows", "track-arrows-source").withProperties(
             symbolPlacement(Property.SYMBOL_PLACEMENT_LINE),
-            symbolSpacing(150f),
+            symbolSpacing(120f), // Frecce un po' più frequenti
             iconImage("arrow-icon"),
-            iconSize(0.4f),
-            iconRotate(90f), // Rotate to point along the line (since drawn pointing up)
+            iconSize(0.55f), // Dimensione aumentata
+            iconRotate(90f),
             iconAllowOverlap(true),
             iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP)
         )
@@ -405,7 +416,7 @@ private fun ensureTrackLayer(style: Style) {
             iconSize(1.0f),
             iconAllowOverlap(true),
             iconIgnorePlacement(true),
-            iconOffset(arrayOf(0f, -25f)) // Center the flag base on the point
+            iconOffset(arrayOf(0f, -25f))
         )
         style.addLayer(layer)
     }
@@ -434,7 +445,6 @@ private fun updateTrackWithSlopes(style: Style, points: List<LatLng>) {
         return
     }
 
-    // Segment features for slopes
     val features = mutableListOf<Feature>()
     for (i in 0 until points.size - 1) {
         val p1 = points[i]
@@ -452,7 +462,6 @@ private fun updateTrackWithSlopes(style: Style, points: List<LatLng>) {
     }
     src.setGeoJson(FeatureCollection.fromFeatures(features))
     
-    // Single LineString for arrows
     val fullLine = LineString.fromLngLats(points.map { Point.fromLngLat(it.longitude, it.latitude) })
     arrowSrc.setGeoJson(Feature.fromGeometry(fullLine))
 }

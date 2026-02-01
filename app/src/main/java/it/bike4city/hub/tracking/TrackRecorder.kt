@@ -1,7 +1,7 @@
 package it.bike4city.hub.tracking
 
 import android.location.Location
-import org.maplibre.android.geometry.LatLng
+import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.*
@@ -31,7 +31,7 @@ object TrackRecorder {
     // Parametri per il filtro Kalman semplificato
     private var lastLat = 0.0
     private var lastLng = 0.0
-    private var variance = -1.0
+    private var variance = -1.0 // -1 indica che il filtro deve essere inizializzato
 
     fun startNew(startedAt: Long) {
         _state.value = State(
@@ -80,6 +80,9 @@ object TrackRecorder {
         variance = -1.0
     }
 
+    /**
+     * Filtro di Kalman semplificato per stabilizzare le coordinate GPS.
+     */
     private fun kalmanFilter(lat: Double, lng: Double, accuracy: Float): LatLng {
         if (variance < 0) {
             lastLat = lat
@@ -88,7 +91,7 @@ object TrackRecorder {
             return LatLng(lat, lng)
         }
 
-        val processNoise = 0.125
+        val processNoise = 0.125 // Rumore del processo (costante di velocità)
         variance += processNoise
         val k = variance / (variance + (accuracy * accuracy))
         
@@ -108,6 +111,7 @@ object TrackRecorder {
             return
         }
 
+        // Applichiamo il filtro di Kalman
         val filteredPoint = kalmanFilter(loc.latitude, loc.longitude, loc.accuracy.coerceAtLeast(5f))
 
         val oldPoints = s.points
@@ -115,6 +119,8 @@ object TrackRecorder {
             val lastPoint = oldPoints.last()
             val dist = distanceMeters(lastPoint, filteredPoint)
 
+            // Filtro "anti-teletrasporto" e "anti-vibrazione":
+            // Ignoriamo movimenti < 2m (fermo al semaforo) o > 250m (errore macroscopico GPS)
             if (dist < 2.0 || dist > 250.0) return
 
             val merged = oldPoints + filteredPoint
