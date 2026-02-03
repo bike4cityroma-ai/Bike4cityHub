@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
@@ -66,6 +67,7 @@ import it.bike4city.hub.data.Route
 import it.bike4city.hub.gpx.GpxParser
 import it.bike4city.hub.location.LocationUpdates
 import it.bike4city.hub.maps.ThunderforestMapLibre
+import it.bike4city.hub.maps.signals.MapSignal
 import it.bike4city.hub.navigation.NavigationUpdate
 import it.bike4city.hub.navigation.TrackNavigationEngine
 import it.bike4city.hub.navigation.TtsCoach
@@ -76,6 +78,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -94,8 +97,8 @@ object NavigationState {
     val isMuted: StateFlow<Boolean> = _isMuted
 
     fun startFollowing() { _isFollowing.value = true }
-    fun stopFollowing() {
-        _isFollowing.value = false
+    fun stopFollowing() { 
+        _isFollowing.value = false 
         _currentUpdate.value = null
     }
     fun update(up: NavigationUpdate) { _currentUpdate.value = up }
@@ -135,14 +138,16 @@ class NavigationService : Service() {
         }
 
         val routeId = intent?.getStringExtra("routeId") ?: return START_NOT_STICKY
-
+        
         serviceScope.launch {
             val route = FirebaseRepo.loadRoute(routeId)
             if (route != null) {
-                val points = runCatching { GpxParser.parse(route.gpxText).points }.getOrElse { emptyList() }
-                val mapLibrePoints = points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
-                if (mapLibrePoints.size >= 2) {
-                    engine = TrackNavigationEngine(mapLibrePoints)
+                val points = runCatching { 
+                    GpxParser.parse(route.gpxText).points.map { LatLng(it.latitude, it.longitude) }
+                }.getOrElse { emptyList() }
+                
+                if (points.size >= 2) {
+                    engine = TrackNavigationEngine(points)
                     tts = TtsCoach(this@NavigationService)
                     startForeground(NOTIF_ID, buildNotification("Inizializzazione..."))
                     startNavigationLoop()
@@ -165,8 +170,9 @@ class NavigationService : Service() {
                     stopNavigation()
                     return@collect
                 }
-
-                val up = engine?.update(pos) ?: return@collect
+                
+                val mapLibreLatLng = LatLng(pos.latitude, pos.longitude)
+                val up = engine?.update(mapLibreLatLng) ?: return@collect
                 NavigationState.update(up)
                 tts?.muted = NavigationState.isMuted.value
 
@@ -209,11 +215,11 @@ class NavigationService : Service() {
     private fun buildNotification(text: String): android.app.Notification {
         ensureChannel()
         val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, MainActivity::class.java), 
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val stopIntent = PendingIntent.getService(
-            this, 1, Intent(this, NavigationService::class.java).setAction(ACTION_STOP),
+            this, 1, Intent(this, NavigationService::class.java).setAction(ACTION_STOP), 
             PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -247,7 +253,9 @@ class NavigationService : Service() {
 @Composable
 fun ViewRouteScreen(routeId: String) {
     var route by remember { mutableStateOf<Route?>(null) }
+    var routeSignals by remember { mutableStateOf<List<MapSignal>>(emptyList()) }
     val ctx = LocalContext.current
+    val currentUid = FirebaseRepo.currentUser()?.uid
 
     val following by NavigationState.isFollowing.collectAsState()
     val navUpdate by NavigationState.currentUpdate.collectAsState()
@@ -267,6 +275,15 @@ fun ViewRouteScreen(routeId: String) {
 
     LaunchedEffect(routeId) {
         route = FirebaseRepo.loadRoute(routeId)
+        // ✅ Carichiamo i segnali della traccia
+        FirebaseRepo.observeRouteSignals(routeId).collect { list ->
+            // Se sono il proprietario vedo tutto, altrimenti solo gli active
+            routeSignals = if (route?.ownerUid == currentUid) {
+                list.map { it.copy(status = "active") } // li forziamo active localmente per la mappa
+            } else {
+                list.filter { it.status == "active" }
+            }
+        }
     }
 
     if (route == null) {
@@ -276,25 +293,21 @@ fun ViewRouteScreen(routeId: String) {
         return
     }
 
-    val points = remember(route!!.gpxText) {
-        runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
+    val mapLibrePoints = remember(route!!.gpxText) {
+        runCatching { 
+            GpxParser.parse(route!!.gpxText).points.map { LatLng(it.latitude, it.longitude) }
+        }.getOrElse { emptyList() }
     }
 
-
-
-    val mapLibrePoints = remember(points) {
-        points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
-    }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             if (mapLibrePoints.isNotEmpty()) {
                 val boundsBuilder = LatLngBounds.Builder()
                 mapLibrePoints.forEach { boundsBuilder.include(it) }
-
+                
                 val start = mapLibrePoints.firstOrNull()
                 val finish = mapLibrePoints.lastOrNull()
-
-                // Progress marker basato sullo stato globale
+                
                 val progressPoint = navUpdate?.let { up ->
                     mapLibrePoints.getOrNull(up.progressIndex)
                 }
@@ -302,6 +315,7 @@ fun ViewRouteScreen(routeId: String) {
                 ThunderforestMapLibre(
                     modifier = Modifier.fillMaxSize(),
                     points = mapLibrePoints,
+                    signals = routeSignals, // ✅ Passiamo i segnali della traccia
                     startPoint = start,
                     finishPoint = finish,
                     progressPoint = progressPoint,
@@ -332,7 +346,7 @@ fun ViewRouteScreen(routeId: String) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        route!!.title.ifBlank { "Percorso" },
+                        route!!.title.ifBlank { "Percorso" }, 
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.Bold
@@ -341,7 +355,7 @@ fun ViewRouteScreen(routeId: String) {
                         CategoryBadge(route!!.b4cCategory!!)
                     }
                 }
-
+                
                 val km = ((route!!.distanceKm ?: 0.0) * 10).roundToInt() / 10.0
                 val remainingKm = if (following && navUpdate != null) {
                     (navUpdate!!.remainingDistanceMeters / 1000.0 * 10).roundToInt() / 10.0
@@ -374,7 +388,7 @@ fun ViewRouteScreen(routeId: String) {
                     Button(
                         onClick = { if (hasLocation) NavigationService.start(ctx, routeId) },
                         modifier = Modifier.weight(1f).height(48.dp),
-                        enabled = hasLocation && points.size >= 2 && !following
+                        enabled = hasLocation && mapLibrePoints.size >= 2 && !following
                     ) {
                         Text("AVVIA NAVIGAZIONE")
                     }
@@ -424,7 +438,6 @@ fun NavigationCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icona direzione (placeholder)
             Box(
                 modifier = Modifier
                     .size(56.dp)

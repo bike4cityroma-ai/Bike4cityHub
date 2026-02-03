@@ -7,6 +7,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.messaging.FirebaseMessaging
+import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
@@ -20,6 +21,7 @@ object FirebaseRepo {
     private const val COL_BOARD = "board_posts"
     private const val COL_ROUTES_MEMBER = "routes_member"
     private const val COL_SUGGESTIONS = "routes_suggestions"
+    private const val COL_SIGNALS = "map_signals"
 
     fun currentUser(): FirebaseUser? = auth.currentUser
 
@@ -88,10 +90,6 @@ object FirebaseRepo {
         awaitClose { sub.remove() }
     }
 
-    /**
-     * Aggiornamento profilo "STRICT":
-     * Invia SOLO i campi ammessi dalle regole di sicurezza.
-     */
     suspend fun updateUserProfileSafe(uid: String, profile: UserProfileWeb) {
         val updates = hashMapOf<String, Any>(
             "address" to profile.address.trim(),
@@ -100,13 +98,9 @@ object FirebaseRepo {
             "newsletterOptIn" to profile.newsletterOptIn,
             "updatedAt" to FieldValue.serverTimestamp()
         )
-
         db.collection(COL_USERS).document(uid).update(updates).await()
     }
 
-    /**
-     * Osserva i percorsi ufficiali di Bike4City (admin -> soci)
-     */
     fun observeOfficialRoutes() = callbackFlow<List<Route>> {
         val q = db.collection(COL_ROUTES_MEMBER)
             .whereEqualTo("status", "public")
@@ -127,9 +121,6 @@ object FirebaseRepo {
         awaitClose { sub.remove() }
     }
 
-    /**
-     * Osserva i percorsi della community approvati (socio -> approvato)
-     */
     fun observeCommunityRoutes() = callbackFlow<List<Route>> {
         val q = db.collection(COL_ROUTES_MEMBER)
             .whereEqualTo("status", "public")
@@ -149,9 +140,6 @@ object FirebaseRepo {
         }
         awaitClose { sub.remove() }
     }
-
-    // Teniamo questa per compatibilità temporanea se serve
-    fun observeSuggestedRoutes() = observeOfficialRoutes()
 
     fun observeMyRoutes(uid: String) = callbackFlow<List<Route>> {
         val sub = db.collection(COL_ROUTES_MEMBER)
@@ -183,7 +171,6 @@ object FirebaseRepo {
             if (d.exists()) {
                 d.toObject(Route::class.java)?.also { it.id = d.id }
             } else {
-                // Fallback su suggeriti legacy se non trovato in member
                 val d2 = db.collection(COL_SUGGESTIONS).document(id).get().await()
                 d2.toObject(Route::class.java)?.also { it.id = d2.id }
             }
@@ -199,5 +186,64 @@ object FirebaseRepo {
 
     suspend fun updateRoute(route: Route) {
         db.collection(COL_ROUTES_MEMBER).document(route.id).set(route).await()
+    }
+
+    suspend fun saveSignal(signal: MapSignal): String {
+        val uid = auth.currentUser?.uid ?: "anonymous"
+        val finalSignal = signal.copy(
+            createdBy = uid,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis()
+        )
+        val doc = db.collection(COL_SIGNALS).add(finalSignal).await()
+        return doc.id
+    }
+
+    fun observePublicSignals() = callbackFlow<List<MapSignal>> {
+        val sub = db.collection(COL_SIGNALS)
+            .whereEqualTo("status", "active")
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.mapNotNull { it.toObject(MapSignal::class.java)?.copy(id = it.id) } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { sub.remove() }
+    }
+
+    fun observeRouteSignals(routeId: String) = callbackFlow<List<MapSignal>> {
+        val sub = db.collection(COL_SIGNALS)
+            .whereEqualTo("routeId", routeId)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.mapNotNull { it.toObject(MapSignal::class.java)?.copy(id = it.id) } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { sub.remove() }
+    }
+
+    fun observePendingSignals() = callbackFlow<List<MapSignal>> {
+        val sub = db.collection(COL_SIGNALS)
+            .whereEqualTo("status", "pending")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    Log.e("FirebaseRepo", "observePendingSignals error: ${err.message}")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.mapNotNull { it.toObject(MapSignal::class.java)?.copy(id = it.id) } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { sub.remove() }
+    }
+
+    suspend fun approveSignal(id: String) {
+        db.collection(COL_SIGNALS).document(id).update("status", "active", "updatedAt", System.currentTimeMillis()).await()
     }
 }

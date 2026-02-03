@@ -2,8 +2,10 @@ package it.bike4city.hub.tracking
 
 import android.location.Location
 import com.google.android.gms.maps.model.LatLng
+import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.UUID
 import kotlin.math.*
 
 object TrackRecorder {
@@ -15,6 +17,7 @@ object TrackRecorder {
         val startedAt: Long = 0L,
         val stoppedAt: Long = 0L,
         val points: List<LatLng> = emptyList(),
+        val signals: List<MapSignal> = emptyList(),
         val distanceMeters: Double = 0.0,
         val pausedTotalSec: Long = 0L,
         val pausedAt: Long = 0L,
@@ -81,6 +84,29 @@ object TrackRecorder {
     }
 
     /**
+     * Aggiunge un segnale (POI o Criticità) alla posizione corrente.
+     */
+    fun addSignal(kind: String, category: String, title: String, description: String = "") {
+        val s = _state.value
+        if (!s.isRecording && !s.isPaused) return
+
+        val lastPoint = s.points.lastOrNull() ?: return
+        
+        val newSignal = MapSignal(
+            id = UUID.randomUUID().toString(),
+            kind = kind,
+            category = category,
+            lat = lastPoint.latitude,
+            lng = lastPoint.longitude,
+            title = title,
+            description = description,
+            createdAt = System.currentTimeMillis()
+        )
+
+        _state.value = s.copy(signals = s.signals + newSignal)
+    }
+
+    /**
      * Filtro di Kalman semplificato per stabilizzare le coordinate GPS.
      */
     private fun kalmanFilter(lat: Double, lng: Double, accuracy: Float): LatLng {
@@ -135,7 +161,7 @@ object TrackRecorder {
 
     private fun distanceMeters(p1: LatLng, p2: LatLng): Double {
         val res = FloatArray(1)
-        Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, res)
+        android.location.Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, res)
         return res[0].toDouble()
     }
 }

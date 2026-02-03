@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AddLocationAlt
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -44,6 +48,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,6 +60,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -67,6 +73,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -113,6 +120,7 @@ import it.bike4city.hub.navigation.TrackNavigationEngine
 import it.bike4city.hub.navigation.TtsCoach
 import it.bike4city.hub.tracking.TrackRecorder
 import it.bike4city.hub.tracking.TrackRecordingService
+import it.bike4city.hub.ui.route.ViewRouteScreen
 import it.bike4city.hub.ui.theme.Bike4CityHubTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
@@ -221,10 +229,7 @@ private fun AppRoot() {
                         composable("routes_map") { RoutesMapScreen(uid = uid, nav = nav) }
                         composable("my_routes_list") { MyRoutesListScreen(uid = uid, nav = nav) }
                         composable("official_routes_list") { OfficialRoutesListScreen(nav = nav) }
-                        composable("edit_route/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) {
-                            val id = it.arguments?.getString("id") ?: return@composable
-                            EditRouteScreen(routeId = id, nav = nav)
-                        }
+                        fragmentEditRoute(nav)
                     }
 
                     composable("profile") {
@@ -250,6 +255,13 @@ private fun AppRoot() {
                 }
             }
         }
+    }
+}
+
+private fun androidx.navigation.NavGraphBuilder.fragmentEditRoute(nav: NavHostController) {
+    composable("edit_route/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) {
+        val id = it.arguments?.getString("id") ?: return@composable
+        EditRouteScreen(routeId = id, nav = nav)
     }
 }
 
@@ -1065,6 +1077,7 @@ private fun RoutesMapScreen(uid: String, nav: NavHostController) {
         containerColor = pageBg,
 
         floatingActionButton = {
+            @Suppress("DEPRECATION")
             Column(horizontalAlignment = Alignment.End) {
 
                 if (fabOpen) {
@@ -1179,6 +1192,7 @@ private fun MyRoutesListScreen(uid: String, nav: NavHostController) {
             title = { Text("Conferma eliminazione") },
             text = { Text("Sei sicuro di voler eliminare il percorso \"${routeToDelete!!.title}\"? L'azione è irreversibile.") },
             confirmButton = {
+                @Suppress("DEPRECATION")
                 TextButton(
                     onClick = {
                         scope.launch {
@@ -1241,6 +1255,7 @@ private fun OfficialRoutesListScreen(nav: NavHostController) {
     Scaffold(
         containerColor = pageBg,
         topBar = {
+            @Suppress("DEPRECATION")
             Column {
                 TopAppBar(
                     title = { Text("Percorsi da Bike4city") },
@@ -1314,8 +1329,7 @@ private fun RouteListItem(route: Route, onClick: () -> Unit, onEdit: (() -> Unit
                 Text(
                     text = "Dist: $km km • Diff: ${prettyDifficulty(route.difficulty)} • Disl: ${prettyMeters(route.ascentM)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             if (onEdit != null) {
@@ -1391,6 +1405,7 @@ private fun EditRouteScreen(routeId: String, nav: NavHostController) {
                 CircularProgressIndicator()
             }
         } else {
+            @Suppress("DEPRECATION")
             Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = title,
@@ -1445,7 +1460,6 @@ private fun EditRouteScreen(routeId: String, nav: NavHostController) {
  */
 @Composable
 private fun RouteDetailScreen(routeId: String) {
-    val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     if (routeId == "_record") {
         RecordRouteScreen()
     } else {
@@ -1515,11 +1529,16 @@ private fun RecordRouteScreen() {
                             status = "recorded",
                             source = "recorded"
                         )
-                        FirebaseRepo.saveRoute(route)
+                        val routeId = FirebaseRepo.saveRoute(route)
+                        
+                        // ✅ Salva anche i segnali raccolti
+                        rec.signals.forEach { s ->
+                            FirebaseRepo.saveSignal(s.copy(routeId = routeId))
+                        }
 
                         TrackRecorder.reset()
 
-                        Toast.makeText(ctx, "Percorso salvato!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Percorso e segnalazioni salvati!", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("Salva") }
             },
@@ -1538,6 +1557,7 @@ private fun RecordRouteScreen() {
             ThunderforestMapLibre(
                 modifier = Modifier.fillMaxSize(),
                 points = remember(rec.points) { rec.points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) } },
+                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } }, // ✅ visibili in locale durante registrazione
                 showMyLocation = hasLocation,
                 followMyLocation = rec.isRecording
             )
@@ -1545,6 +1565,7 @@ private fun RecordRouteScreen() {
             Card(
                 modifier = Modifier.align(Alignment.TopCenter).padding(12.dp)
             ) {
+                @Suppress("DEPRECATION")
                 Column(Modifier.padding(12.dp)) {
                     val km = (rec.distanceMeters / 1000.0 * 10).roundToInt() / 10.0
                     val status = when {
@@ -1554,6 +1575,32 @@ private fun RecordRouteScreen() {
                     }
                     Text(status, style = MaterialTheme.typography.titleMedium)
                     Text("Punti: ${rec.points.size} • Distanza: $km km")
+                }
+            }
+            
+            // ✅ PULSANTE SEGNALA CRITICITÀ
+            if (rec.isRecording || rec.isPaused) {
+                var showSignalMenu by remember { mutableStateOf(false) }
+                
+                FloatingActionButton(
+                    onClick = { showSignalMenu = true },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp),
+                    containerColor = Color(0xFFFFD600), // Giallo evidenziatore
+                    contentColor = Color.Black
+                ) {
+                    Icon(Icons.Outlined.WarningAmber, contentDescription = "Segnala")
+                }
+                
+                if (showSignalMenu) {
+                    SignalSelectionMenu(
+                        onDismiss = { showSignalMenu = false },
+                        onSelected = { kind, cat, title ->
+                            // TODO: Chiedere descrizione minima
+                            TrackRecorder.addSignal(kind, cat, title)
+                            showSignalMenu = false
+                            Toast.makeText(ctx, "Segnalazione aggiunta!", Toast.LENGTH_SHORT).show()
+                        }
+                    )
                 }
             }
         }
@@ -1608,6 +1655,78 @@ private fun RecordRouteScreen() {
                         ) { Text("Stop") }
                     }
                     else -> {}
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SignalSelectionMenu(onDismiss: () -> Unit, onSelected: (String, String, String) -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState())) {
+            Text("Segnala Criticità", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(16.dp))
+            
+            SignalCategory("🚨 Infrastrutturali", listOf(
+                "buche" to "Buche",
+                "asfalto_dissestato" to "Asfalto dissestato",
+                "binari_tram" to "Binari del tram",
+                "cordoli_killer" to "Cordoli killer",
+                "ciclabili_interrotte" to "Ciclabili interrotte"
+            ), "critical", onSelected)
+            
+            Spacer(Modifier.height(16.dp))
+            
+            SignalCategory("🚗 Comportamentali", listOf(
+                "parcheggio_selvaggio" to "Parcheggio selvaggio",
+                "doppie_file" to "Doppie file croniche",
+                "incroci_pericolosi" to "Attraversamenti pericolosi",
+                "semafori_antibici" to "Semafori “anti-bici”"
+            ), "critical", onSelected)
+            
+            Spacer(Modifier.height(16.dp))
+            
+            SignalCategory("⚠️ Temporanee", listOf(
+                "cantieri" to "Cantieri",
+                "lavori_infiniti" to "Lavori infiniti",
+                "deviazioni" to "Deviazioni non segnalate",
+                "transenne" to "Transenne creative"
+            ), "critical", onSelected)
+            
+            Spacer(Modifier.height(16.dp))
+            
+            SignalCategory("📍 Punti di Interesse", listOf(
+                "fontanella" to "Fontanella",
+                "rastrelliera" to "Rastrelliera",
+                "officina" to "Ciclo-officina"
+            ), "poi", onSelected)
+            
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun SignalCategory(title: String, items: List<Pair<String, String>>, kind: String, onSelected: (String, String, String) -> Unit) {
+    Column {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(8.dp))
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.height(if (items.size > 2) 120.dp else 60.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(items) { (cat, label) ->
+                Card(
+                    onClick = { onSelected(kind, cat, label) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Box(Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.Center) {
+                        Text(label, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                    }
                 }
             }
         }
@@ -1909,47 +2028,12 @@ private fun InfoScreen(nav: NavHostController) {
             }
 
             InfoCard("Riconoscimenti") {
-                val ctx = LocalContext.current
-                val linkColor = MaterialTheme.colorScheme.primary
-
-                val annotated = buildAnnotatedString {
-                    fun link(label: String, url: String) {
-                        pushStringAnnotation(tag = "URL", annotation = url)
-                        withStyle(
-                            SpanStyle(
-                                color = linkColor,
-                                textDecoration = TextDecoration.Underline,
-                                fontWeight = FontWeight.Medium
-                            )
-                        ) { append(label) }
-                        pop()
-                    }
-
-                    append("Bike4City Hub utilizza strumenti open source e servizi di terze parti:\n\n")
-
-                    append("• "); link("OpenStreetMap", "https://www.openstreetmap.org/copyright"); append(" e contributori\n")
-                    append("• "); link("MapLibre", "https://maplibre.org"); append(" (visualizzazione cartografica)\n")
-                    append("• "); link("Firebase", "https://firebase.google.com"); append(" (autenticazione e servizi cloud)\n")
-                    append("• "); link("Thunderforest", "https://www.thunderforest.com"); append(" (provider mappe)\n\n")
-
-                    append("Marchi, nomi e loghi appartengono ai rispettivi proprietari.\n")
-                    append("L’utilizzo avviene nel rispetto delle relative licenze.")
-                }
-
-                ClickableText(
-                    text = annotated,
-                    style = MaterialTheme.typography.bodyMedium,
-                    onClick = { offset ->
-                        annotated.getStringAnnotations("URL", offset, offset)
-                            .firstOrNull()
-                            ?.let { ann ->
-                                try {
-                                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ann.item)))
-                                } catch (_: Exception) {
-                                    Toast.makeText(ctx, "Impossibile aprire il link", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                    }
+                Text(
+                    "• OpenStreetMap e contributori\n" +
+                            "• MapLibre\n" +
+                            "• Firebase\n" +
+                            "• Provider mappe (es. Thunderforest)\n\n" +
+                            "Marchi e loghi appartengono ai rispettivi proprietari."
                 )
             }
 
@@ -1960,9 +2044,7 @@ private fun InfoScreen(nav: NavHostController) {
                 Text(
                     text = "Email: $email",
                     modifier = Modifier.clickable {
-                        val i = Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:$email")
-                        }
+                        val i = Intent(Intent.ACTION_VIEW, Uri.parse("mailto:$email"))
                         ctx.startActivity(i)
                     },
                     color = MaterialTheme.colorScheme.primary,
