@@ -124,6 +124,7 @@ import it.bike4city.hub.ui.route.ViewRouteScreen
 import it.bike4city.hub.ui.theme.Bike4CityHubTheme
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1556,8 +1557,8 @@ private fun RecordRouteScreen() {
         Box(Modifier.weight(1f)) {
             ThunderforestMapLibre(
                 modifier = Modifier.fillMaxSize(),
-                points = remember(rec.points) { rec.points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) } },
-                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } }, // ✅ visibili in locale durante registrazione
+                points = rec.points, // ✅ Non serve più la conversione, i tipi corrispondono!
+                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } }, 
                 showMyLocation = hasLocation,
                 followMyLocation = rec.isRecording
             )
@@ -1770,18 +1771,14 @@ private fun ViewRouteScreen(routeId: String) {
         return
     }
 
-    val points = remember(route!!.gpxText) {
+    val mapLibrePoints = remember(route!!.gpxText) {
         runCatching { GpxParser.parse(route!!.gpxText).points }.getOrElse { emptyList() }
-    }
-
-    val mapLibrePoints = remember(points) {
-        points.map { org.maplibre.android.geometry.LatLng(it.latitude, it.longitude) }
     }
 
     val ctx = LocalContext.current
 
     // engine & TTS: li ricreiamo quando cambia il percorso
-    val engine = remember(points) { TrackNavigationEngine(points = mapLibrePoints) }
+    val engine = remember(mapLibrePoints) { TrackNavigationEngine(points = mapLibrePoints) }
     val tts = remember { TtsCoach(ctx) }
     LaunchedEffect(muted) { tts.muted = muted }
 
@@ -1792,8 +1789,8 @@ private fun ViewRouteScreen(routeId: String) {
     }
 
     // loop di navigazione: quando “following” è attivo, ascolta la posizione e aggiorna UI + voce
-    LaunchedEffect(following, hasLocation, points) {
-        if (!following || !hasLocation || points.size < 2) return@LaunchedEffect
+    LaunchedEffect(following, hasLocation, mapLibrePoints) {
+        if (!following || !hasLocation || mapLibrePoints.size < 2) return@LaunchedEffect
         engine.reset()
         LocationUpdates.flow(ctx).collect { pos ->
             val up = engine.update(pos)
@@ -1830,7 +1827,7 @@ private fun ViewRouteScreen(routeId: String) {
                 )
             }
 
-            if (following && points.isNotEmpty()) {
+            if (following && mapLibrePoints.isNotEmpty()) {
                 val (instr, meters, onRoute) = navUpdate
                 Card(
                     modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
@@ -1892,7 +1889,7 @@ private fun ViewRouteScreen(routeId: String) {
                     Button(
                         onClick = { if (hasLocation) following = true },
                         modifier = Modifier.weight(1f),
-                        enabled = hasLocation && points.size >= 2
+                        enabled = hasLocation && mapLibrePoints.size >= 2
                     ) {
                         Text("Segui")
                     }
@@ -1961,6 +1958,7 @@ private fun InfoChip(text: String, modifier: Modifier = Modifier) {
 private fun InfoScreen(nav: NavHostController) {
     val scroll = rememberScrollState()
     val pageBg = Color(0xFFF5F5F5)
+    val ctx = LocalContext.current
 
     Scaffold(
         containerColor = pageBg,
@@ -2028,18 +2026,50 @@ private fun InfoScreen(nav: NavHostController) {
             }
 
             InfoCard("Riconoscimenti") {
-                Text(
-                    "• OpenStreetMap e contributori\n" +
-                            "• MapLibre\n" +
-                            "• Firebase\n" +
-                            "• Provider mappe (es. Thunderforest)\n\n" +
-                            "Marchi e loghi appartengono ai rispettivi proprietari."
+                val recognitions = remember {
+                    buildAnnotatedString {
+                        append("• ")
+                        pushStringAnnotation(tag = "LINK", annotation = "https://www.openstreetmap.org/copyright")
+                        withStyle(SpanStyle(color = Color(0xFF1976D2), textDecoration = TextDecoration.Underline)) {
+                            append("OpenStreetMap")
+                        }
+                        pop()
+                        append(" e contributori\n• ")
+                        
+                        pushStringAnnotation(tag = "LINK", annotation = "https://maplibre.org/")
+                        withStyle(SpanStyle(color = Color(0xFF1976D2), textDecoration = TextDecoration.Underline)) {
+                            append("MapLibre")
+                        }
+                        pop()
+                        append("\n• ")
+
+                        pushStringAnnotation(tag = "LINK", annotation = "https://firebase.google.com/")
+                        withStyle(SpanStyle(color = Color(0xFF1976D2), textDecoration = TextDecoration.Underline)) {
+                            append("Firebase")
+                        }
+                        pop()
+                        append("\n• Provider mappe (es. ")
+
+                        pushStringAnnotation(tag = "LINK", annotation = "https://www.thunderforest.com/")
+                        withStyle(SpanStyle(color = Color(0xFF1976D2), textDecoration = TextDecoration.Underline)) {
+                            append("Thunderforest")
+                        }
+                        pop()
+                        append(")\n\nMarchi e loghi appartengono ai rispettivi proprietari.")
+                    }
+                }
+
+                ClickableText(
+                    text = recognitions,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    onClick = { offset ->
+                        recognitions.getStringAnnotations("LINK", offset, offset)
+                            .firstOrNull()?.let { ann -> openLink(ctx, ann.item) }
+                    }
                 )
             }
 
             InfoCard("Contatti") {
-                val ctx = LocalContext.current
-
                 val email = "admin.hub@bike4city.it"
                 Text(
                     text = "Email: $email",

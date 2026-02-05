@@ -1,7 +1,7 @@
 package it.bike4city.hub.tracking
 
 import android.location.Location
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +34,8 @@ object TrackRecorder {
     // Parametri per il filtro Kalman semplificato
     private var lastLat = 0.0
     private var lastLng = 0.0
-    private var variance = -1.0 // -1 indica che il filtro deve essere inizializzato
+    private var lastAlt = 0.0
+    private var variance = -1.0 
 
     fun startNew(startedAt: Long) {
         _state.value = State(
@@ -83,9 +84,6 @@ object TrackRecorder {
         variance = -1.0
     }
 
-    /**
-     * Aggiunge un segnale (POI o Criticità) alla posizione corrente.
-     */
     fun addSignal(kind: String, category: String, title: String, description: String = "") {
         val s = _state.value
         if (!s.isRecording && !s.isPaused) return
@@ -107,25 +105,28 @@ object TrackRecorder {
     }
 
     /**
-     * Filtro di Kalman semplificato per stabilizzare le coordinate GPS.
+     * Filtro di Kalman potenziato per includere l'altitudine.
      */
-    private fun kalmanFilter(lat: Double, lng: Double, accuracy: Float): LatLng {
+    private fun kalmanFilter(lat: Double, lng: Double, alt: Double, accuracy: Float): LatLng {
         if (variance < 0) {
             lastLat = lat
             lastLng = lng
+            lastAlt = alt
             variance = (accuracy * accuracy).toDouble()
-            return LatLng(lat, lng)
+            return LatLng(lat, lng, alt)
         }
 
-        val processNoise = 0.125 // Rumore del processo (costante di velocità)
+        val processNoise = 0.8 // Valore bilanciato per reattività e stabilità
         variance += processNoise
         val k = variance / (variance + (accuracy * accuracy))
         
         lastLat += k * (lat - lastLat)
         lastLng += k * (lng - lastLng)
+        // L'altitudine GPS è meno precisa, usiamo un coefficiente di smoothing più forte (k/2)
+        lastAlt += (k * 0.5) * (alt - lastAlt)
         variance *= (1 - k)
         
-        return LatLng(lastLat, lastLng)
+        return LatLng(lastLat, lastLng, lastAlt)
     }
 
     fun appendPointWithExtra(loc: Location) {
@@ -137,17 +138,28 @@ object TrackRecorder {
             return
         }
 
-        // Applichiamo il filtro di Kalman
-        val filteredPoint = kalmanFilter(loc.latitude, loc.longitude, loc.accuracy.coerceAtLeast(5f))
+        // 1. Filtro velocità (Anti-Outlier): max 100 km/h (27.7 m/s)
+        if (loc.hasSpeed() && loc.speed > 27.7f) return
+
+        // 2. Filtro precisione dinamico: ignoriamo punti con accuratezza pessima (> 60m)
+        if (loc.accuracy > 60f) return
+
+        val filteredPoint = kalmanFilter(loc.latitude, loc.longitude, loc.altitude, loc.accuracy.coerceAtLeast(5f))
 
         val oldPoints = s.points
         if (oldPoints.isNotEmpty()) {
             val lastPoint = oldPoints.last()
             val dist = distanceMeters(lastPoint, filteredPoint)
+            
+            // 3. Filtro movimento minimo (Anti-Jitter):
+            // Se ci muoviamo a meno di 0.5 m/s (1.8 km/h), probabilmente siamo fermi.
+            // Ignoriamo micro-spostamenti < 1.5 metri per evitare scarabocchi da fermi.
+            val timeInterval = (System.currentTimeMillis() - (if (oldPoints.size > 1) 1500 else 0)) / 1000.0
+            if (dist < 1.5) return
 
-            // Filtro "anti-teletrasporto" e "anti-vibrazione":
-            // Ignoriamo movimenti < 2m (fermo al semaforo) o > 250m (errore macroscopico GPS)
-            if (dist < 2.0 || dist > 250.0) return
+            // 4. Filtro velocità media tra due punti (Anti-Jump)
+            // Se tra due campionamenti (es. 1.5s) la velocità calcolata è > 120 km/h, è un errore.
+            if (dist > 50.0) return
 
             val merged = oldPoints + filteredPoint
             _state.value = s.copy(

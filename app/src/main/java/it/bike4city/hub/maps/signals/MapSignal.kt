@@ -1,18 +1,26 @@
 package it.bike4city.hub.maps.signals
 
+import com.google.firebase.firestore.IgnoreExtraProperties
+
+/**
+ * Rappresenta una segnalazione sulla mappa (POI o Criticità).
+ * Utilizziamo 'var' e valori predefiniti per permettere a Firebase Firestore
+ * di serializzare/deserializzare correttamente l'oggetto anche dopo l'offuscamento R8.
+ */
+@IgnoreExtraProperties
 data class MapSignal(
-    val id: String = "",
-    val kind: String = "poi",         // "poi" | "critical"
-    val category: String = "",        // es: "fontanella", "buche", "parcheggio_selvaggio"
-    val lat: Double = 0.0,
-    val lng: Double = 0.0,
-    val title: String = "",           // breve
-    val description: String = "",     // breve
-    val link: String = "",            // opzionale: sito web o info extra
-    val status: String = "pending",   // "pending" (in attesa di admin) | "active" (pubblico) | "resolved" | "expired"
-    val createdBy: String = "",
-    val routeId: String? = null,      // se creato durante una registrazione, punta all'ID del percorso
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis(),
-    val expiresAt: Long? = null       // null = non scade
+    var id: String = "",
+    var kind: String = "poi",         // "poi" | "critical"
+    var category: String = "",        // es: "fontanella", "buche", "parcheggio_selvaggio"
+    var lat: Double = 0.0,
+    var lng: Double = 0.0,
+    var title: String = "",           // breve
+    var description: String = "",     // breve
+    var link: String = "",            // opzionale: sito web o info extra
+    var status: String = "pending",   // "pending" | "active" | "resolved" | "expired"
+    var createdBy: String = "",
+    var routeId: String? = null,      // se creato durante una registrazione
+    var createdAt: Long = System.currentTimeMillis(),
+    var updatedAt: Long = System.currentTimeMillis(),
+    var expiresAt: Long? = null       // null = non scade
 )

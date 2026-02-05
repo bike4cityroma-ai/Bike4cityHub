@@ -1,6 +1,6 @@
 package it.bike4city.hub.gpx
 
-import com.google.android.gms.maps.model.LatLng
+import org.maplibre.android.geometry.LatLng
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
@@ -38,7 +38,8 @@ object GpxParser {
                         "trkpt" -> {
                             val lat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull()
                             val lon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull()
-                            if (lat != null && lon != null) pts.add(LatLng(lat, lon))
+                            val ele = parser.getAttributeValue(null, "ele")?.toDoubleOrNull() ?: 0.0
+                            if (lat != null && lon != null) pts.add(LatLng(lat, lon, ele))
                         }
                     }
                 }
@@ -77,7 +78,10 @@ object GpxParser {
             append("    <trkseg>\n")
             points.forEach { p ->
                 val time = iso8601Format.format(Date())
+                // Includiamo l'altitudine nel file GPX se presente
+                val eleStr = if (p.altitude > 0) "      <ele>${p.altitude}</ele>\n" else ""
                 append("      <trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\">\n")
+                append(eleStr)
                 append("        <time>$time</time>\n")
                 append("      </trkpt>\n")
             }

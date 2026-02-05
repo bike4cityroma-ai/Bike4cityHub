@@ -441,11 +441,13 @@ private fun ensureTrackLayer(style: Style) {
             lineColor(
                 step(
                     get("slope"),
-                    literal("#2563EB"),
-                    stop(-3.0, literal("#3B82F6")),
-                    stop(1.5, literal("#22C55E")),
-                    stop(5.0, literal("#FACC15")),
-                    stop(10.0, literal("#EF4444"))
+                    literal("#4CAF50"), // Default: Verde (Pianura)
+                    stop(-4.0, literal("#2196F3")),  // Discesa ripida: Blu
+                    stop(-1.0, literal("#81C784")),  // Discesa leggera: Verde chiaro
+                    stop(1.0, literal("#4CAF50")),   // Pianura: Verde
+                    stop(3.5, literal("#FFEB3B")),   // Salita leggera: Giallo
+                    stop(7.0, literal("#FF9800")),   // Salita media: Arancio
+                    stop(12.0, literal("#F44336"))   // Salita dura: Rosso
                 )
             )
         )
@@ -520,8 +522,11 @@ private fun calculateSlope(p1: LatLng, p2: LatLng): Double {
     val res = FloatArray(1)
     android.location.Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, res)
     val distance = res[0].toDouble()
-    if (distance < 2.0) return 0.0
-    return ((p2.altitude - p1.altitude) / distance) * 100.0
+    if (distance < 3.0) return 0.0 // Ignoriamo micro-distanze per evitare rumore altimetrico
+    
+    // Calcolo pendenza percentuale: (differenza altezza / distanza) * 100
+    val deltaAlt = p2.altitude - p1.altitude
+    return (deltaAlt / distance) * 100.0
 }
 
 private fun updateMarkers(style: Style, start: LatLng?, finish: LatLng?, progress: LatLng?) {

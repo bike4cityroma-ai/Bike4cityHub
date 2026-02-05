@@ -139,17 +139,18 @@ class TrackRecordingService : Service() {
     private fun startLocationUpdatesAgain() {
         if (callback != null) return
 
-        // Ottimizzato per la bici: aggiornamenti ogni 2.5 secondi, minimo 3 metri
-        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
-            .setMinUpdateIntervalMillis(1500L)
-            .setMinUpdateDistanceMeters(3f)
+        // Ottimizzato per la bici: aggiornamenti ogni 1.5 secondi, minimo 1 metro
+        // Questo rende la traccia molto più fedele al percorso stradale
+        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
+            .setMinUpdateIntervalMillis(1000L)
+            .setMinUpdateDistanceMeters(1f)
             .build()
 
         val cb = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.locations.forEach { loc ->
-                    // Accettiamo solo punti con precisione accettabile (< 40m)
-                    if (loc.accuracy < 40f) {
+                    // Accettiamo punti con precisione fino a 50m, il filtro di Kalman farà il resto
+                    if (loc.accuracy < 50f) {
                         TrackRecorder.appendPointWithExtra(loc)
                     }
                 }
