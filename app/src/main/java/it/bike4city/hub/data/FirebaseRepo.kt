@@ -51,14 +51,51 @@ object FirebaseRepo {
         )
         db.collection(COL_USERS).document(uid).set(profile).await()
         runCatching { messaging.subscribeToTopic("users").await() }
+        saveFcmToken()
     }
 
     suspend fun signIn(email: String, password: String) {
         auth.signInWithEmailAndPassword(email, password).await()
         runCatching { messaging.subscribeToTopic("users").await() }
+        saveFcmToken()
     }
 
     fun signOut() = auth.signOut()
+
+    fun saveFcmTokenIfLogged() {
+        val user = auth.currentUser ?: return
+
+        messaging.token.addOnSuccessListener { token ->
+            db.collection(COL_USERS)
+                .document(user.uid)
+                .set(
+                    mapOf(
+                        "fcmToken" to token,
+                        "notificationsEnabled" to true,
+                        "tokenUpdatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                )
+        }
+    }
+
+    suspend fun saveFcmToken() {
+        val uid = auth.currentUser?.uid ?: return
+        try {
+            val token = messaging.token.await()
+            db.collection(COL_USERS).document(uid).set(
+                mapOf(
+                    "fcmToken" to token,
+                    "notificationsEnabled" to true,
+                    "tokenUpdatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+            Log.d("FirebaseRepo", "FCM Token saved for user $uid")
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Failed to save FCM token", e)
+        }
+    }
 
     fun observeBoardMessages() = callbackFlow<List<BoardMessage>> {
         val q = db.collection(COL_BOARD)
@@ -77,7 +114,9 @@ object FirebaseRepo {
                 return@addSnapshotListener
             }
 
-            val list = snap.documents.mapNotNull { it.toObject(BoardMessage::class.java) }
+            val list = snap.documents.mapNotNull { d ->
+                d.toObject(BoardMessage::class.java)?.also { it.id = d.id }
+            }
             trySend(list)
         }
 

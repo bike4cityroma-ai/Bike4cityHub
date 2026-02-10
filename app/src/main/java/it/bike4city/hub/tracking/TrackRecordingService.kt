@@ -116,7 +116,7 @@ class TrackRecordingService : Service() {
         }
 
         startLocationUpdatesAgain()
-        
+
         // Monitora lo stato per aggiornare la distanza nella notifica
         TrackRecorder.state
             .onEach { updateNotification() }
@@ -155,9 +155,11 @@ class TrackRecordingService : Service() {
     private fun startLocationUpdatesAgain() {
         if (callback != null) return
 
-        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
-            .setMinUpdateIntervalMillis(1000L)
-            .setMinUpdateDistanceMeters(2f)
+        // In città (palazzi, multipath) chiedere update troppo ravvicinati aumenta solo rumore.
+        // Preferiamo meno punti ma migliori: la pulizia la fa TrackRecorder.
+        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
+            .setMinUpdateIntervalMillis(1500L)
+            .setMinUpdateDistanceMeters(5f)
             .build()
 
         val cb = object : LocationCallback() {
@@ -216,7 +218,7 @@ class TrackRecordingService : Service() {
             s.isPaused -> "In pausa"
             else -> "Registrazione"
         }
-        
+
         val text = "$status • $km km percorsi"
 
         return NotificationCompat.Builder(this, CHANNEL_ID)

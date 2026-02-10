@@ -2,7 +2,6 @@ package it.bike4city.hub
 
 import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -41,7 +40,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AddLocationAlt
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -74,7 +72,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +89,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -102,7 +100,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -118,13 +115,17 @@ import it.bike4city.hub.data.UserProfileWeb
 import it.bike4city.hub.gpx.GpxParser
 import it.bike4city.hub.location.LocationUpdates
 import it.bike4city.hub.maps.ThunderforestMapLibre
+import it.bike4city.hub.maps.snap.DisplaySnapLiteController
+import it.bike4city.hub.maps.snap.RoadsSnapperLite
 import it.bike4city.hub.navigation.TrackNavigationEngine
 import it.bike4city.hub.navigation.TtsCoach
 import it.bike4city.hub.tracking.TrackRecorder
 import it.bike4city.hub.tracking.TrackRecordingService
 import it.bike4city.hub.ui.route.ViewRouteScreen
 import it.bike4city.hub.ui.theme.Bike4CityHubTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
@@ -159,6 +160,8 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
+        FirebaseRepo.saveFcmTokenIfLogged()
+
         setContent {
             Bike4CityHubTheme {
                 Surface(Modifier.fillMaxSize()) {
@@ -191,6 +194,7 @@ private fun AppRoot() {
                 scope.launch {
                     try {
                         FirebaseRepo.signIn(email, pass)
+                        FirebaseRepo.saveFcmTokenIfLogged()
                         screen = "app"
                     } catch (e: Exception) {
                         Log.w("AppRoot", "Sign-in failed", e)
@@ -485,8 +489,7 @@ private fun HomeScreen(nav: NavHostController) {
                                 .fillMaxWidth()
                                 .padding(14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                            verticalAlignment = Alignment.CenterVertically) {
                             Text("Tutti i messaggi", style = MaterialTheme.typography.titleMedium)
                             Button(onClick = { nav.navigate("board_all") }) { Text("Apri") }
                         }
@@ -1489,6 +1492,26 @@ private fun RecordRouteScreen() {
     val ctx = LocalContext.current
     val rec by TrackRecorder.state.collectAsState()
 
+    // --- SNAP "LEGGERO" SOLO PER VISUALIZZAZIONE (non modifica i dati salvati) ---
+    val roadsKey = stringResource(R.string.google_roads_api_key)
+    val snapper = remember(roadsKey) { RoadsSnapperLite(roadsKey) }
+    val snapCtl = remember(roadsKey) { DisplaySnapLiteController(snapper) }
+    var displayPoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+
+    LaunchedEffect(rec.points, roadsKey) {
+        // aggiornamento immediato: mostra sempre la traccia filtrata "vera"
+        displayPoints = rec.points
+
+        // ogni tot secondi: prova a fare snap (solo vista) sull'ultimo blocco
+        if (snapCtl.shouldSnap(pointsCount = rec.points.size)) {
+            val snapshot = rec.points.toList()
+            val snapped = withContext(Dispatchers.IO) {
+                snapCtl.buildDisplayPoints(snapshot)
+            }
+            displayPoints = snapped
+        }
+    }
+
     var hasLocation by remember { mutableStateOf(false) }
     val requestPerms = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -1545,7 +1568,7 @@ private fun RecordRouteScreen() {
                             source = "recorded"
                         )
                         val routeId = FirebaseRepo.saveRouteWithPointsAndMatch(route, rec.points)
-                        
+
                         // ✅ Salva anche i segnali raccolti
                         rec.signals.forEach { s ->
                             FirebaseRepo.saveSignal(s.copy(routeId = routeId))
@@ -1571,8 +1594,9 @@ private fun RecordRouteScreen() {
         Box(Modifier.weight(1f)) {
             ThunderforestMapLibre(
                 modifier = Modifier.fillMaxSize(),
-                points = rec.points, // ✅ Non serve più la conversione, i tipi corrispondono!
-                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } }, 
+                // ✅ Vista più pulita: traccia filtrata + snap leggero (solo visualizzazione)
+                points = if (displayPoints.isNotEmpty()) displayPoints else rec.points,
+                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } },
                 showMyLocation = hasLocation,
                 followMyLocation = rec.isRecording
             )
@@ -1592,11 +1616,11 @@ private fun RecordRouteScreen() {
                     Text("Punti: ${rec.points.size} • Distanza: $km km")
                 }
             }
-            
+
             // ✅ PULSANTE SEGNALA CRITICITÀ
             if (rec.isRecording || rec.isPaused) {
                 var showSignalMenu by remember { mutableStateOf(false) }
-                
+
                 FloatingActionButton(
                     onClick = { showSignalMenu = true },
                     modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp),
@@ -1605,7 +1629,7 @@ private fun RecordRouteScreen() {
                 ) {
                     Icon(Icons.Outlined.WarningAmber, contentDescription = "Segnala")
                 }
-                
+
                 if (showSignalMenu) {
                     SignalSelectionMenu(
                         onDismiss = { showSignalMenu = false },
@@ -1642,9 +1666,9 @@ private fun RecordRouteScreen() {
                 when (rec.phase) {
                     TrackRecorder.Phase.IDLE -> {
                         Button(
-                            onClick = { 
+                            onClick = {
                                 Log.d("RecordRouteScreen", "Click su AVVIA")
-                                TrackRecordingService.start(ctx) 
+                                TrackRecordingService.start(ctx)
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Avvia") }
@@ -1662,9 +1686,9 @@ private fun RecordRouteScreen() {
                     }
                     TrackRecorder.Phase.PAUSED -> {
                         Button(
-                            onClick = { 
+                            onClick = {
                                 TrackRecorder.resume(System.currentTimeMillis())
-                                TrackRecordingService.resume(ctx) 
+                                TrackRecordingService.resume(ctx)
                             },
                             modifier = Modifier.weight(1f)
                         ) { Text("Riprendi") }
@@ -1687,7 +1711,7 @@ private fun SignalSelectionMenu(onDismiss: () -> Unit, onSelected: (String, Stri
         Column(Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState())) {
             Text("Segnala Criticità", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))
-            
+
             SignalCategory("🚨 Infrastrutturali", listOf(
                 "buche" to "Buche",
                 "asfalto_dissestato" to "Asfalto dissestato",
@@ -1695,33 +1719,33 @@ private fun SignalSelectionMenu(onDismiss: () -> Unit, onSelected: (String, Stri
                 "cordoli_killer" to "Cordoli killer",
                 "ciclabili_interrotte" to "Ciclabili interrotte"
             ), "critical", onSelected)
-            
+
             Spacer(Modifier.height(16.dp))
-            
+
             SignalCategory("🚗 Comportamentali", listOf(
                 "parche parking_selvaggio" to "Parcheggio selvaggio",
                 "doppie_file" to "Doppie file croniche",
                 "incroci_pericolosi" to "Attraversamenti pericolosi",
                 "semafori_antibici" to "Semafori “anti-bici”"
             ), "critical", onSelected)
-            
+
             Spacer(Modifier.height(16.dp))
-            
+
             SignalCategory("⚠️ Temporanee", listOf(
                 "cantieri" to "Cantieri",
                 "lavori_infiniti" to "Lavori infiniti",
                 "deviazioni" to "Deviazioni non segnalate",
                 "transenne" to "Transenne creative"
             ), "critical", onSelected)
-            
+
             Spacer(Modifier.height(16.dp))
-            
+
             SignalCategory("📍 Punti di Interesse", listOf(
                 "fontanella" to "Fontanella",
                 "rastrelliera" to "Rastrelliera",
                 "officina" to "Ciclo-officina"
             ), "poi", onSelected)
-            
+
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -2053,7 +2077,7 @@ private fun InfoScreen(nav: NavHostController) {
                         }
                         pop()
                         append(" e contributori\n• ")
-                        
+
                         pushStringAnnotation(tag = "LINK", annotation = "https://maplibre.org/")
                         withStyle(SpanStyle(color = Color(0xFF1976D2), textDecoration = TextDecoration.Underline)) {
                             append("MapLibre")
