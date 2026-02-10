@@ -37,12 +37,22 @@ object TrackRecorder {
     private var lastAlt = 0.0
     private var variance = -1.0 
 
+    // --- Timing reale tra punti
+    private var lastFixTimeMs: Long = 0L
+
+    // --- Stop&Go
+    private var stillSinceMs: Long = 0L
+    private var isStopped: Boolean = false
+
     fun startNew(startedAt: Long) {
         _state.value = State(
             phase = Phase.RECORDING,
             startedAt = startedAt
         )
         variance = -1.0
+        lastFixTimeMs = 0L
+        stillSinceMs = 0L
+        isStopped = false
     }
 
     fun pause(now: Long) {
@@ -62,6 +72,9 @@ object TrackRecorder {
             skipNextPoint = true
         )
         variance = -1.0
+        lastFixTimeMs = 0L
+        stillSinceMs = 0L
+        isStopped = false
     }
 
     fun stop(stoppedAt: Long) {
@@ -122,7 +135,7 @@ object TrackRecorder {
         
         lastLat += k * (lat - lastLat)
         lastLng += k * (lng - lastLng)
-        // L'altitudine GPS è meno precisa, usiamo un coefficiente di smoothing più forte (k/2)
+        // L\u0027altitudine GPS è meno precisa, usiamo un coefficiente di smoothing più forte (k/2)
         lastAlt += (k * 0.5) * (alt - lastAlt)
         variance *= (1 - k)
         
@@ -169,6 +182,18 @@ object TrackRecorder {
         } else {
             _state.value = s.copy(points = listOf(filteredPoint))
         }
+    }
+
+    /**
+     * Alias mantenuto per compatibilità con TrackRecordingService.
+     * Internamente usa la pipeline attuale.
+     */
+    fun appendPointSmart(loc: Location) {
+        // Se nel tuo TrackRecorder esiste appendPointWithExtra, usa quella:
+        appendPointWithExtra(loc)
+
+        // Se NON esiste appendPointWithExtra ma esiste appendPoint, allora usa:
+        // appendPoint(loc)
     }
 
     private fun distanceMeters(p1: LatLng, p2: LatLng): Double {

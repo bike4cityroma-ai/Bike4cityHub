@@ -2,6 +2,7 @@ package it.bike4city.hub
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -101,6 +102,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -133,6 +135,16 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
+    private val requestNotifPerm = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* ok */ }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
 
         val splashScreen = installSplashScreen()
@@ -142,6 +154,8 @@ class MainActivity : ComponentActivity() {
             System.currentTimeMillis() - startTime < 2000  // 2 secondi
         }
         MapLibre.getInstance(this)
+
+        ensureNotificationPermission()
 
         super.onCreate(savedInstanceState)
 
@@ -393,7 +407,7 @@ private fun LoginScreen(
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().clickable {
-                    val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://bike4city.org/password-reset"))
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://bike4city-social-hub.web.app/login.html"))
                     ctx.startActivity(i)
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1530,7 +1544,7 @@ private fun RecordRouteScreen() {
                             status = "recorded",
                             source = "recorded"
                         )
-                        val routeId = FirebaseRepo.saveRoute(route)
+                        val routeId = FirebaseRepo.saveRouteWithPointsAndMatch(route, rec.points)
                         
                         // ✅ Salva anche i segnali raccolti
                         rec.signals.forEach { s ->
@@ -1628,9 +1642,11 @@ private fun RecordRouteScreen() {
                 when (rec.phase) {
                     TrackRecorder.Phase.IDLE -> {
                         Button(
-                            onClick = { TrackRecordingService.start(ctx) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = hasLocation
+                            onClick = { 
+                                Log.d("RecordRouteScreen", "Click su AVVIA")
+                                TrackRecordingService.start(ctx) 
+                            },
+                            modifier = Modifier.fillMaxWidth()
                         ) { Text("Avvia") }
                     }
 
@@ -1646,8 +1662,10 @@ private fun RecordRouteScreen() {
                     }
                     TrackRecorder.Phase.PAUSED -> {
                         Button(
-                            onClick = { TrackRecorder.resume(System.currentTimeMillis())
-                                TrackRecordingService.resume(ctx) },
+                            onClick = { 
+                                TrackRecorder.resume(System.currentTimeMillis())
+                                TrackRecordingService.resume(ctx) 
+                            },
                             modifier = Modifier.weight(1f)
                         ) { Text("Riprendi") }
                         OutlinedButton(
@@ -1681,7 +1699,7 @@ private fun SignalSelectionMenu(onDismiss: () -> Unit, onSelected: (String, Stri
             Spacer(Modifier.height(16.dp))
             
             SignalCategory("🚗 Comportamentali", listOf(
-                "parcheggio_selvaggio" to "Parcheggio selvaggio",
+                "parche parking_selvaggio" to "Parcheggio selvaggio",
                 "doppie_file" to "Doppie file croniche",
                 "incroci_pericolosi" to "Attraversamenti pericolosi",
                 "semafori_antibici" to "Semafori “anti-bici”"
@@ -1990,7 +2008,7 @@ private fun InfoScreen(nav: NavHostController) {
 
             InfoCard("Chi siamo") {
                 Text(
-                    "Bike4City Hub è un progetto indipendente promosso da Bike4City APS.\n" +
+                    "Bike4City Hub è un project indipendente promosso da Bike4City APS.\n" +
                             "Nasce per sostenere una mobilità più giusta, sicura e accessibile, mettendo al centro la bicicletta come strumento di cambiamento urbano, culturale e sociale.\n\n" +
                             "Crediamo che la città si capisca meglio a pedali.\n" +
                             "E quando la capisci davvero, non puoi fare a meno di pretenderla migliore:\n" +

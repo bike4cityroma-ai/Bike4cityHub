@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -30,6 +32,7 @@ import kotlin.math.roundToInt
 class TrackRecordingService : Service() {
 
     companion object {
+        private const val TAG = "TrackRecordingService"
         private const val CHANNEL_ID = "bike4city_recording"
         private const val NOTIF_ID = 1001
 
@@ -39,8 +42,14 @@ class TrackRecordingService : Service() {
         private const val ACTION_RESUME = "it.bike4city.hub.action.RESUME_RECORDING"
 
         fun start(ctx: Context) {
+            Log.d(TAG, "Avvio richiesto")
             val i = Intent(ctx, TrackRecordingService::class.java).setAction(ACTION_START)
-            if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) {
+                Log.e(TAG, "Errore startService: ${e.message}")
+                Toast.makeText(ctx, "Impossibile avviare registrazione: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
 
         fun stop(ctx: Context) {
@@ -65,12 +74,15 @@ class TrackRecordingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "Service creato")
         fused = LocationServices.getFusedLocationProviderClient(this)
         ensureChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        Log.d(TAG, "onStartCommand action=$action")
+        when (action) {
             ACTION_START -> startRecording()
             ACTION_STOP -> stopRecording()
             ACTION_PAUSE -> pauseRecording()
@@ -80,19 +92,27 @@ class TrackRecordingService : Service() {
     }
 
     private fun startRecording() {
-        if (callback != null) return
+        if (callback != null) {
+            Log.d(TAG, "Registrazione già attiva, ignoro")
+            return
+        }
 
-        val s = TrackRecorder.state.value
-        if (s.isRecording || s.isPaused) return
-
-        val startedAt = System.currentTimeMillis()
-        TrackRecorder.startNew(startedAt)
+        // Forza lo stato di registrazione nel recorder
+        TrackRecorder.startNew(System.currentTimeMillis())
 
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIF_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+            Log.d(TAG, "startForeground OK")
+        } catch (e: Exception) {
+            Log.e(TAG, "Errore startForeground: ${e.message}")
+            // Se fallisce il foreground, dobbiamo fermare il servizio per evitare crash del sistema
+            stopSelf()
+            return
         }
 
         startLocationUpdatesAgain()
@@ -105,9 +125,7 @@ class TrackRecordingService : Service() {
 
     private fun pauseRecording() {
         if (!TrackRecorder.state.value.isRecording) return
-
         TrackRecorder.pause(System.currentTimeMillis())
-
         callback?.let { fused.removeLocationUpdates(it) }
         callback = null
         updateNotification()
@@ -115,18 +133,16 @@ class TrackRecordingService : Service() {
 
     private fun resumeRecording() {
         if (!TrackRecorder.state.value.isPaused) return
-
         TrackRecorder.resume(System.currentTimeMillis())
         startLocationUpdatesAgain()
         updateNotification()
     }
 
     private fun stopRecording() {
+        Log.d(TAG, "Fermo registrazione")
         callback?.let { fused.removeLocationUpdates(it) }
         callback = null
-
         TrackRecorder.stop(System.currentTimeMillis())
-
         if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -139,20 +155,20 @@ class TrackRecordingService : Service() {
     private fun startLocationUpdatesAgain() {
         if (callback != null) return
 
-        // Ottimizzato per la bici: aggiornamenti ogni 1.5 secondi, minimo 1 metro
-        // Questo rende la traccia molto più fedele al percorso stradale
-        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
+        val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
             .setMinUpdateIntervalMillis(1000L)
-            .setMinUpdateDistanceMeters(1f)
+            .setMinUpdateDistanceMeters(2f)
             .build()
 
         val cb = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { loc ->
-                    // Accettiamo punti con precisione fino a 50m, il filtro di Kalman farà il resto
-                    if (loc.accuracy < 50f) {
-                        TrackRecorder.appendPointWithExtra(loc)
-                    }
+                val best = result.locations
+                    .filter { it.accuracy > 0f }
+                    .minByOrNull { it.accuracy }
+                    ?: return
+
+                if (best.accuracy <= 65f) {
+                    TrackRecorder.appendPointSmart(best)
                 }
             }
         }
@@ -160,7 +176,9 @@ class TrackRecordingService : Service() {
         callback = cb
         try {
             fused.requestLocationUpdates(req, cb, mainLooper)
+            Log.d(TAG, "Aggiornamenti GPS avviati")
         } catch (e: SecurityException) {
+            Log.e(TAG, "Errore permessi GPS: ${e.message}")
             stopRecording()
         }
     }
@@ -206,15 +224,16 @@ class TrackRecordingService : Service() {
             .setContentTitle("Bike4City Hub")
             .setContentText(text)
             .setContentIntent(openApp)
-            .setOngoing(s.phase == TrackRecorder.Phase.RECORDING || s.phase == TrackRecorder.Phase.PAUSED)
-            .addAction(0, pauseOrResumeLabel, pauseResumeIntent)
-            .addAction(0, "Stop", stopIntent)
+            .setOngoing(true)
+            .addAction(R.drawable.ic_launcher_foreground, pauseOrResumeLabel, pauseResumeIntent)
+            .addAction(R.drawable.ic_launcher_foreground, "Stop", stopIntent)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
     private fun updateNotification() {
         val mgr = getSystemService(NotificationManager::class.java)
-        mgr.notify(NOTIF_ID, buildNotification())
+        mgr?.notify(NOTIF_ID, buildNotification())
     }
 
     private fun ensureChannel() {
@@ -225,11 +244,12 @@ class TrackRecordingService : Service() {
             "Registrazione traccia",
             NotificationManager.IMPORTANCE_LOW
         )
-        mgr.createNotificationChannel(ch)
+        mgr?.createNotificationChannel(ch)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "Service distrutto")
         serviceScope.cancel()
     }
 

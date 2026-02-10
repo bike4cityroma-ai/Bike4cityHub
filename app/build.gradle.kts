@@ -68,6 +68,8 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
+    // ✅ Callable Cloud Functions (es. matchRoute)
+    implementation("com.google.firebase:firebase-functions")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 

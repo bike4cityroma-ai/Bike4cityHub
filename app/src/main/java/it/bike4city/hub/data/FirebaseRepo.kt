@@ -6,16 +6,22 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.messaging.FirebaseMessaging
 import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import org.maplibre.android.geometry.LatLng
 
 object FirebaseRepo {
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val messaging: FirebaseMessaging by lazy { FirebaseMessaging.getInstance() }
+
+    // ✅ Callable Functions
+    private val functions by lazy { FirebaseFunctions.getInstance("us-central1") }
 
     private const val COL_USERS = "users"
     private const val COL_BOARD = "board_posts"
@@ -163,6 +169,50 @@ object FirebaseRepo {
     suspend fun saveRoute(route: Route): String {
         val doc = db.collection(COL_ROUTES_MEMBER).add(route).await()
         return doc.id
+    }
+
+    /**
+     * ✅ NUOVO: salva route + points (lat/lng) in routes_member e poi chiama matchRoute callable.
+     */
+    suspend fun saveRouteWithPointsAndMatch(route: Route, points: List<LatLng>): String {
+        val docRef = db.collection(COL_ROUTES_MEMBER).add(route).await()
+        val routeId = docRef.id
+
+        val pointsPayload = points.map { p ->
+            mapOf("lat" to p.latitude, "lng" to p.longitude)
+        }
+
+        docRef.set(
+            mapOf(
+                "points" to pointsPayload,
+                "matchingStatus" to "pending",
+                "matchingRequestedAt" to System.currentTimeMillis()
+            ),
+            SetOptions.merge()
+        ).await()
+
+        runCatching { matchRouteCallable(routeId) }
+            .onFailure { e ->
+                Log.e("FirebaseRepo", "matchRouteCallable failed for $routeId: ${e.message}", e)
+                runCatching {
+                    docRef.set(
+                        mapOf(
+                            "matchingStatus" to "failed",
+                            "matchingError" to (e.message ?: "callable_failed"),
+                            "matchedAt" to FieldValue.serverTimestamp()
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                }
+            }
+
+        return routeId
+    }
+
+    private suspend fun matchRouteCallable(routeId: String) {
+        auth.currentUser?.uid ?: error("Utente non loggato")
+        val data = hashMapOf("routeId" to routeId, "force" to false)
+        functions.getHttpsCallable("matchRoute").call(data).await()
     }
 
     suspend fun loadRoute(id: String): Route? {
