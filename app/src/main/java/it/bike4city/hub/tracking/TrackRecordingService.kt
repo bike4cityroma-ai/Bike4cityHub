@@ -27,9 +27,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 class TrackRecordingService : Service() {
+
+    private val stopOnce = AtomicBoolean(false)
 
     companion object {
         private const val TAG = "TrackRecordingService"
@@ -92,6 +95,7 @@ class TrackRecordingService : Service() {
     }
 
     private fun startRecording() {
+        stopOnce.set(false)
         if (callback != null) {
             Log.d(TAG, "Registrazione già attiva, ignoro")
             return
@@ -139,6 +143,10 @@ class TrackRecordingService : Service() {
     }
 
     private fun stopRecording() {
+        if (!stopOnce.compareAndSet(false, true)) {
+            Log.d(TAG, "stopRecording già eseguito, ignoro")
+            return
+        }
         Log.d(TAG, "Fermo registrazione")
         callback?.let { fused.removeLocationUpdates(it) }
         callback = null

@@ -26,12 +26,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
@@ -58,6 +62,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import it.bike4city.hub.R
 import it.bike4city.hub.UserPrefs
+import it.bike4city.hub.data.FirebaseRepo
+import it.bike4city.hub.data.SignalLite
 import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
@@ -91,9 +97,9 @@ enum class TfStyle(val id: String, val label: String) {
     ATLAS("atlas", "Mappa Città")
 }
 
-private const val SIGNALS_SOURCE_ID = "signals-source"
-private const val SIGNALS_POI_LAYER_ID = "signals-poi-layer"
-private const val SIGNALS_CRITICAL_LAYER_ID = "signals-critical-layer"
+private val SIGNALS_SOURCE_ID = "b4c-signals-source"
+private val SIGNALS_LAYER_ID = "b4c-signals-layer"
+private var signalsLayerEnabled = false
 
 @Composable
 fun ThunderforestMapLibre(
@@ -115,13 +121,10 @@ fun ThunderforestMapLibre(
 
     val scope = rememberCoroutineScope()
 
-    val signalsByIdRef = remember { AtomicReference<Map<String, MapSignal>>(emptyMap()) }
-    var selectedSignal by remember { mutableStateOf<MapSignal?>(null) }
+    var selectedSignalLite by remember { mutableStateOf<SignalLite?>(null) }
     var clickListenerAdded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(signals) {
-        signalsByIdRef.set(signals.associateBy { it.id })
-    }
+    
+    var signalsEnabled by remember { mutableStateOf(signalsLayerEnabled) }
 
     LaunchedEffect(Unit) {
         MapLibre.getInstance(ctx)
@@ -129,6 +132,67 @@ fun ThunderforestMapLibre(
 
     var sheetOpen by remember { mutableStateOf(false) }
     val mapView = rememberMapViewWithLifecycle()
+
+    fun updateSignalsSource(map: org.maplibre.android.maps.MapLibreMap, signals: List<SignalLite>) {
+        map.getStyle { style ->
+            ensureSignalsLayer(style)
+            val src = style.getSourceAs<GeoJsonSource>(SIGNALS_SOURCE_ID) ?: return@getStyle
+
+            val features = signals.map { s ->
+                Feature.fromGeometry(
+                    Point.fromLngLat(s.lng, s.lat)
+                ).also { f ->
+                    f.addStringProperty("id", s.id)
+                    s.category?.let { f.addStringProperty("category", it) }
+                    s.kind?.let { f.addStringProperty("kind", it) }
+                    s.title?.let { f.addStringProperty("title", it) }
+                    s.description?.let { f.addStringProperty("description", it) }
+                    s.severity?.let { f.addNumberProperty("severity", it) }
+                }
+            }
+            src.setGeoJson(FeatureCollection.fromFeatures(features))
+        }
+    }
+
+    fun refreshSignals(map: org.maplibre.android.maps.MapLibreMap) {
+        val b = map.projection.visibleRegion.latLngBounds
+        val south = b.southWest.latitude
+        val west  = b.southWest.longitude
+        val north = b.northEast.latitude
+        val east  = b.northEast.longitude
+
+        scope.launch {
+            try {
+                val signals = FirebaseRepo.loadActiveSignalsInBounds(
+                    south = south,
+                    west = west,
+                    north = north,
+                    east = east,
+                    limit = 800
+                )
+                updateSignalsSource(map, signals)
+            } catch (e: Exception) {
+                Log.e("Map", "Error refreshing signals", e)
+            }
+        }
+    }
+
+    fun setSignalsEnabled(enabled: Boolean) {
+        signalsLayerEnabled = enabled
+        signalsEnabled = enabled
+        mapView.getMapAsync { map ->
+            map.getStyle { style ->
+                ensureSignalsLayer(style)
+                style.getLayer(SIGNALS_LAYER_ID)?.setProperties(
+                    visibility(
+                        if (enabled) Property.VISIBLE
+                        else Property.NONE
+                    )
+                )
+            }
+            if (enabled) refreshSignals(map)
+        }
+    }
 
     Box(modifier) {
         AndroidView(
@@ -139,35 +203,38 @@ fun ThunderforestMapLibre(
                         map.uiSettings.isLogoEnabled = false
                         map.uiSettings.isAttributionEnabled = false
                         
+                        map.addOnCameraIdleListener {
+                            if (signalsLayerEnabled) refreshSignals(map)
+                        }
+
                         if (!clickListenerAdded) {
                             clickListenerAdded = true
                             map.addOnMapClickListener { latLng ->
-                                val p: PointF = map.projection.toScreenLocation(latLng)
-                                val tol = 24f
-                                val rect = android.graphics.RectF(p.x - tol, p.y - tol, p.x + tol, p.y + tol)
+                                if (!signalsLayerEnabled) return@addOnMapClickListener false
 
-                                val features = map.queryRenderedFeatures(
-                                    rect,
-                                    SIGNALS_CRITICAL_LAYER_ID,
-                                    SIGNALS_POI_LAYER_ID
+                                val screenPt = map.projection.toScreenLocation(latLng)
+                                val hits = map.queryRenderedFeatures(screenPt, SIGNALS_LAYER_ID)
+                                if (hits.isEmpty()) return@addOnMapClickListener false
+
+                                val f = hits[0]
+                                selectedSignalLite = SignalLite(
+                                    id = f.getStringProperty("id") ?: "",
+                                    lat = latLng.latitude,
+                                    lng = latLng.longitude,
+                                    title = f.getStringProperty("title"),
+                                    description = f.getStringProperty("description"),
+                                    category = f.getStringProperty("category"),
+                                    kind = f.getStringProperty("kind"),
+                                    severity = f.getNumberProperty("severity")?.toInt()
                                 )
-
-                                if (features.isNotEmpty()) {
-                                    val f = features.first()
-                                    val id = if (f.hasProperty("id")) f.getStringProperty("id") else ""
-                                    val signal = signalsByIdRef.get()[id]
-                                    if (signal != null) {
-                                        selectedSignal = signal
-                                        true
-                                    } else false
-                                } else false
+                                true
                             }
                         }
 
                         map.setStyle(buildThunderforestStyle(tfKey, styleState.id)) { loadedStyle ->
                             addIconsToStyle(loadedStyle)
                             ensureTrackLayer(loadedStyle)
-                            ensureSignalsLayers(loadedStyle)
+                            ensureSignalsLayer(loadedStyle)
                             updateTrackWithSlopes(loadedStyle, points)
                             updateMarkers(loadedStyle, startPoint, finishPoint, progressPoint)
                             updateSignals(loadedStyle, signals)
@@ -187,6 +254,21 @@ fun ThunderforestMapLibre(
         )
 
         AttributionBar(modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp))
+
+        IconButton(
+            onClick = { setSignalsEnabled(!signalsEnabled) },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
+                .size(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.WarningAmber,
+                contentDescription = "Attiva Segnalazioni",
+                tint = if (signalsEnabled) Color.Red else MaterialTheme.colorScheme.onSurface
+            )
+        }
 
         FloatingActionButton(
             onClick = { sheetOpen = true },
@@ -223,40 +305,36 @@ fun ThunderforestMapLibre(
             }
         }
 
-        if (selectedSignal != null) {
-            ModalBottomSheet(onDismissRequest = { selectedSignal = null }) {
-                val s = selectedSignal!!
+        if (selectedSignalLite != null) {
+            ModalBottomSheet(onDismissRequest = { selectedSignalLite = null }) {
+                val s = selectedSignalLite!!
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text(text = s.title.ifBlank { s.category }, style = MaterialTheme.typography.titleLarge)
+                    Text(text = s.title ?: s.category ?: "Segnalazione", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(8.dp))
+                    val label = if (s.kind == "critical") "⚠️ Criticità" else "📍 POI"
                     Text(
-                        text = (if (s.kind == "critical") "⚠️ Criticità" else "📍 POI") + " • " + s.category,
+                        text = "$label • ${s.category ?: ""}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text(text = s.description.ifBlank { "Nessuna descrizione" }, style = MaterialTheme.typography.bodyLarge)
-                    Spacer(Modifier.height(14.dp))
-                    
-                    if (s.link.isNotBlank()) {
+                    if (s.severity != null) {
                         Text(
-                            text = "Sito Web / Info",
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clickable {
-                                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.link))) }
-                                }
-                                .padding(vertical = 10.dp)
+                            text = "Gravità: ${s.severity}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Red
                         )
                     }
-
+                    Spacer(Modifier.height(10.dp))
+                    Text(text = s.description ?: "Nessuna descrizione", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(14.dp))
+                    
                     Text(
                         text = "Apri in navigazione",
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .clickable {
-                                val uri = Uri.parse("geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${Uri.encode(s.title.ifBlank { s.category })})")
-                                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                                val uri = Uri.parse("geo:${s.lat},${s.lng}?q=${s.lat},${s.lng}(${Uri.encode(s.title ?: s.category ?: "Segnalazione")})")
+                                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri.toString()))) }
                             }
                             .padding(vertical = 10.dp)
                     )
@@ -352,9 +430,11 @@ private fun rememberMapViewWithLifecycle(): MapView {
 private fun reloadStyle(mapView: MapView, tfKey: String, style: TfStyle, points: List<LatLng>, signals: List<MapSignal>, startPoint: LatLng?, finishPoint: LatLng?, progressPoint: LatLng?) {
     mapView.getMapAsync { map ->
         map.setStyle(buildThunderforestStyle(tfKey, style.id), Style.OnStyleLoaded {
+            it.addImage("sig-poi", createDotBitmap(android.graphics.Color.parseColor("#1E88E5")))
+            it.addImage("sig-critical", createDotBitmap(android.graphics.Color.parseColor("#E53935")))
             addIconsToStyle(it)
             ensureTrackLayer(it)
-            ensureSignalsLayers(it)
+            ensureSignalsLayer(it)
             updateTrackWithSlopes(it, points)
             updateMarkers(it, startPoint, finishPoint, progressPoint)
             updateSignals(it, signals)
@@ -372,8 +452,8 @@ private fun addIconsToStyle(style: Style) {
     style.addImage("arrow-icon", createArrowBitmap())
     style.addImage("flag-start", createFlagBitmap(android.graphics.Color.GREEN))
     style.addImage("flag-finish", createFlagBitmap(android.graphics.Color.RED))
-    style.addImage("sig-poi", createDotBitmap(android.graphics.Color.parseColor("#1E88E5")))
-    style.addImage("sig-critical", createDotBitmap(android.graphics.Color.parseColor("#E53935")))
+    if (style.getImage("sig-poi") == null) style.addImage("sig-poi", createDotBitmap(android.graphics.Color.parseColor("#1E88E5")))
+    if (style.getImage("sig-critical") == null) style.addImage("sig-critical", createDotBitmap(android.graphics.Color.parseColor("#E53935")))
 }
 
 private fun createArrowBitmap(): Bitmap {
@@ -485,18 +565,37 @@ private fun ensureTrackLayer(style: Style) {
     }
 }
 
-private fun ensureSignalsLayers(style: Style) {
-    if (style.getSource(SIGNALS_SOURCE_ID) == null) style.addSource(GeoJsonSource(SIGNALS_SOURCE_ID, FeatureCollection.fromFeatures(arrayOf())))
-    if (style.getLayer(SIGNALS_POI_LAYER_ID) == null) {
-        val layer = SymbolLayer(SIGNALS_POI_LAYER_ID, SIGNALS_SOURCE_ID).withProperties(iconImage("sig-poi"), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(0.9f))
-        layer.setFilter(all(all(eq(get("kind"), literal("poi")), eq(get("status"), literal("active")))))
+private fun ensureSignalsLayer(style: Style) {
+    if (style.getSource(SIGNALS_SOURCE_ID) == null) {
+        val src = GeoJsonSource(SIGNALS_SOURCE_ID, FeatureCollection.fromFeatures(arrayOf()))
+        style.addSource(src)
+    }
+
+    if (style.getLayer(SIGNALS_LAYER_ID) == null) {
+        val layer = SymbolLayer(SIGNALS_LAYER_ID, SIGNALS_SOURCE_ID).apply {
+            setProperties(
+                iconImage(
+                    match(
+                        get("kind"),
+                        literal("sig-poi"),
+                        stop("critical", literal("sig-critical")),
+                        stop("poi", literal("sig-poi"))
+                    )
+                ),
+                iconAllowOverlap(true),
+                iconIgnorePlacement(true),
+                iconSize(1.0f)
+            )
+        }
         if (style.getLayer("track-arrows") != null) style.addLayerAbove(layer, "track-arrows") else style.addLayer(layer)
     }
-    if (style.getLayer(SIGNALS_CRITICAL_LAYER_ID) == null) {
-        val layer = SymbolLayer(SIGNALS_CRITICAL_LAYER_ID, SIGNALS_SOURCE_ID).withProperties(iconImage("sig-critical"), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(1.0f))
-        layer.setFilter(all(all(eq(get("kind"), literal("critical")), eq(get("status"), literal("active")))))
-        if (style.getLayer("track-arrows") != null) style.addLayerAbove(layer, "track-arrows") else style.addLayer(layer)
-    }
+
+    style.getLayer(SIGNALS_LAYER_ID)?.setProperties(
+        visibility(
+            if (signalsLayerEnabled) Property.VISIBLE
+            else Property.NONE
+        )
+    )
 }
 
 private fun updateTrackWithSlopes(style: Style, points: List<LatLng>) {

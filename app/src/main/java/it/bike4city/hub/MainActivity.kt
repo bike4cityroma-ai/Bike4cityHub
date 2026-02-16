@@ -89,7 +89,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -115,19 +114,14 @@ import it.bike4city.hub.data.UserProfileWeb
 import it.bike4city.hub.gpx.GpxParser
 import it.bike4city.hub.location.LocationUpdates
 import it.bike4city.hub.maps.ThunderforestMapLibre
-import it.bike4city.hub.maps.snap.DisplaySnapLiteController
-import it.bike4city.hub.maps.snap.RoadsSnapperLite
 import it.bike4city.hub.navigation.TrackNavigationEngine
 import it.bike4city.hub.navigation.TtsCoach
-import it.bike4city.hub.tracking.TrackRecorder
-import it.bike4city.hub.tracking.TrackRecordingService
+import it.bike4city.hub.trackerpro.Geo
+import it.bike4city.hub.trackerpro.ProTrackingService
 import it.bike4city.hub.ui.route.ViewRouteScreen
 import it.bike4city.hub.ui.theme.Bike4CityHubTheme
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
-import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1490,26 +1484,24 @@ private fun RecordRouteScreen() {
     val pageBg = Color(0xFFF5F5F5) // grigio chiaro
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val rec by TrackRecorder.state.collectAsState()
+    val rec by ProTrackingService.state.collectAsState()
+    val points by ProTrackingService.points.collectAsState()
+    val signals by ProTrackingService.signals.collectAsState()
+    // --- VISUALIZZAZIONE: breadcrumb live dei punti registrati
+    val displayPoints = points
 
-    // --- SNAP "LEGGERO" SOLO PER VISUALIZZAZIONE (non modifica i dati salvati) ---
-    val roadsKey = stringResource(R.string.google_roads_api_key)
-    val snapper = remember(roadsKey) { RoadsSnapperLite(roadsKey) }
-    val snapCtl = remember(roadsKey) { DisplaySnapLiteController(snapper) }
-    var displayPoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    // Dialog di fine registrazione (lo apriamo quando premi STOP)
+    var showStopDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(rec.points, roadsKey) {
-        // aggiornamento immediato: mostra sempre la traccia filtrata "vera"
-        displayPoints = rec.points
-
-        // ogni tot secondi: prova a fare snap (solo vista) sull'ultimo blocco
-        if (snapCtl.shouldSnap(pointsCount = rec.points.size)) {
-            val snapshot = rec.points.toList()
-            val snapped = withContext(Dispatchers.IO) {
-                snapCtl.buildDisplayPoints(snapshot)
-            }
-            displayPoints = snapped
+    fun distanceMeters(pts: List<org.maplibre.android.geometry.LatLng>): Double {
+        if (pts.size < 2) return 0.0
+        var d = 0.0
+        for (i in 1 until pts.size) {
+            val a = pts[i - 1]
+            val b = pts[i]
+            d += Geo.haversineMeters(a.latitude, a.longitude, b.latitude, b.longitude)
         }
+        return d
     }
 
     var hasLocation by remember { mutableStateOf(false) }
@@ -1535,31 +1527,32 @@ private fun RecordRouteScreen() {
         requestPermissions()
 
         onDispose {
-            TrackRecorder.reset()
+            // Se esci dalla schermata mentre registri, non tocchiamo il servizio.
+            // Puliamo solo eventuali buffer UI se la registrazione era già terminata.
         }
     }
 
-    if (rec.phase == TrackRecorder.Phase.STOPPED && rec.points.size >= 2) {
-        val durationSec = ((rec.stoppedAt - rec.startedAt) / 1000L).coerceAtLeast(0L) - rec.pausedTotalSec
-
+    if (showStopDialog && points.size >= 2) {
         AlertDialog(
-            onDismissRequest = { /* non chiudiamo a tap fuori, così obblighi scelta */ },
+            onDismissRequest = { /* obbligo scelta */ },
             title = { Text("Registrazione fermata") },
             text = {
-                val km = (rec.distanceMeters / 1000.0 * 10).toInt() / 10.0
-                Text("Distanza: $km km\nDurata: ${durationSec / 60} min\n\nVuoi salvare il percorso o scartarlo?")
+                val km = (distanceMeters(points) / 1000.0 * 10).toInt() / 10.0
+                val mode = rec.activeMode?.ifBlank { "" } ?: ""
+                Text("Distanza: $km km\nModalità: $mode\n\nVuoi salvare il percorso o scartarlo?")
             },
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
                         val uid = FirebaseRepo.currentUser()?.uid ?: return@launch
                         val now = System.currentTimeMillis()
-                        val gpx = GpxParser.createGpx(rec.points, "Recorded track")
+                        val gpx = GpxParser.createGpx(points, "Recorded track")
+                        val distKm = distanceMeters(points) / 1000.0
 
                         val route = Route(
                             title = "Percorso del ${SimpleDateFormat("dd/MM", Locale.ITALY).format(Date(now))}",
                             gpxText = gpx,
-                            distanceKm = rec.distanceMeters / 1000.0,
+                            distanceKm = distKm,
                             isOfficial = false,
                             ownerUid = uid,
                             createdByUid = uid,
@@ -1567,22 +1560,24 @@ private fun RecordRouteScreen() {
                             status = "recorded",
                             source = "recorded"
                         )
-                        val routeId = FirebaseRepo.saveRouteWithPointsAndMatch(route, rec.points)
 
-                        // ✅ Salva anche i segnali raccolti
-                        rec.signals.forEach { s ->
+                        val routeId = FirebaseRepo.saveRouteWithPointsAndMatch(route, points)
+
+                        // ✅ Salva segnali raccolti
+                        signals.forEach { s ->
                             FirebaseRepo.saveSignal(s.copy(routeId = routeId))
                         }
 
-                        TrackRecorder.reset()
-
-                        Toast.makeText(ctx, "Percorso e segnalazioni salvati!", Toast.LENGTH_SHORT).show()
+                        ProTrackingService.clear(ctx)
+                        showStopDialog = false
+                        Toast.makeText(ctx, "Percorso salvato! Sto agganciando alla strada…", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("Salva") }
             },
             dismissButton = {
                 OutlinedButton(onClick = {
-                    TrackRecorder.reset()
+                    ProTrackingService.clear(ctx)
+                    showStopDialog = false
                     Toast.makeText(ctx, "Percorso scartato", Toast.LENGTH_SHORT).show()
                 }) { Text("Scarta") }
             }
@@ -1595,8 +1590,8 @@ private fun RecordRouteScreen() {
             ThunderforestMapLibre(
                 modifier = Modifier.fillMaxSize(),
                 // ✅ Vista più pulita: traccia filtrata + snap leggero (solo visualizzazione)
-                points = if (displayPoints.isNotEmpty()) displayPoints else rec.points,
-                signals = remember(rec.signals) { rec.signals.map { it.copy(status = "active") } },
+                points = displayPoints,
+                signals = remember(signals) { signals.map { it.copy(status = "active") } },
                 showMyLocation = hasLocation,
                 followMyLocation = rec.isRecording
             )
@@ -1606,14 +1601,14 @@ private fun RecordRouteScreen() {
             ) {
                 @Suppress("DEPRECATION")
                 Column(Modifier.padding(12.dp)) {
-                    val km = (rec.distanceMeters / 1000.0 * 10).roundToInt() / 10.0
                     val status = when {
                         rec.isRecording -> "REC ●"
                         rec.isPaused -> "In pausa"
                         else -> "Pronto"
                     }
                     Text(status, style = MaterialTheme.typography.titleMedium)
-                    Text("Punti: ${rec.points.size} • Distanza: $km km")
+                    val liveKm = (distanceMeters(points) / 1000.0 * 10).roundToInt() / 10.0
+                    Text("Punti: ${points.size} • Distanza: $liveKm km")
                 }
             }
 
@@ -1635,7 +1630,7 @@ private fun RecordRouteScreen() {
                         onDismiss = { showSignalMenu = false },
                         onSelected = { kind, cat, title ->
                             // TODO: Chiedere descrizione minima
-                            TrackRecorder.addSignal(kind, cat, title)
+                            ProTrackingService.addSignal(kind, cat, title)
                             showSignalMenu = false
                             Toast.makeText(ctx, "Segnalazione aggiunta!", Toast.LENGTH_SHORT).show()
                         }
@@ -1663,37 +1658,43 @@ private fun RecordRouteScreen() {
                     }
                 }
             } else {
-                when (rec.phase) {
-                    TrackRecorder.Phase.IDLE -> {
+                when {
+                    !rec.isRecording && !rec.isPaused -> {
                         Button(
                             onClick = {
                                 Log.d("RecordRouteScreen", "Click su AVVIA")
-                                TrackRecordingService.start(ctx)
+                                ProTrackingService.start(ctx)
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Avvia") }
                     }
 
-                    TrackRecorder.Phase.RECORDING -> {
+                    rec.isRecording && !rec.isPaused -> {
                         Button(
-                            onClick = { TrackRecordingService.pause(ctx) },
+                            onClick = { ProTrackingService.pause(ctx) },
                             modifier = Modifier.weight(1f)
                         ) { Text("Pausa") }
                         OutlinedButton(
-                            onClick = { TrackRecordingService.stop(ctx) },
+                            onClick = {
+                                ProTrackingService.stop(ctx)
+                                showStopDialog = true
+                            },
                             modifier = Modifier.weight(1f)
                         ) { Text("Stop") }
                     }
-                    TrackRecorder.Phase.PAUSED -> {
+
+                    rec.isPaused -> {
                         Button(
                             onClick = {
-                                TrackRecorder.resume(System.currentTimeMillis())
-                                TrackRecordingService.resume(ctx)
+                                ProTrackingService.resume(ctx)
                             },
                             modifier = Modifier.weight(1f)
                         ) { Text("Riprendi") }
                         OutlinedButton(
-                            onClick = { TrackRecordingService.stop(ctx) },
+                            onClick = {
+                                ProTrackingService.stop(ctx)
+                                showStopDialog = true
+                            },
                             modifier = Modifier.weight(1f)
                         ) { Text("Stop") }
                     }
@@ -1702,8 +1703,8 @@ private fun RecordRouteScreen() {
             }
         }
     }
-}
 
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SignalSelectionMenu(onDismiss: () -> Unit, onSelected: (String, String, String) -> Unit) {

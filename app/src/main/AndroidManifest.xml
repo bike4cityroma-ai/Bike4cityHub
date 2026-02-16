@@ -36,8 +36,9 @@
             </intent-filter>
         </activity>
 
+        <!-- ✅ Registrazione tracce "pro" (foreground + location) -->
         <service
-            android:name=".tracking.TrackRecordingService"
+            android:name=".trackerpro.ProTrackingService"
             android:exported="false"
             android:foregroundServiceType="location" />
 

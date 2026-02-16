@@ -4,23 +4,23 @@ import com.google.firebase.firestore.IgnoreExtraProperties
 
 /**
  * Rappresenta una segnalazione sulla mappa (POI o Criticità).
- * Utilizziamo 'var' e valori predefiniti per permettere a Firebase Firestore
- * di serializzare/deserializzare correttamente l'oggetto anche dopo l'offuscamento R8.
+ * Usiamo 'var' e valori predefiniti per la piena compatibilità con Firestore.
  */
 @IgnoreExtraProperties
 data class MapSignal(
     var id: String = "",
-    var kind: String = "poi",         // "poi" | "critical"
-    var category: String = "",        // es: "fontanella", "buche", "parcheggio_selvaggio"
+    var kind: String = "poi",
+    var category: String = "",
     var lat: Double = 0.0,
     var lng: Double = 0.0,
-    var title: String = "",           // breve
-    var description: String = "",     // breve
-    var link: String = "",            // opzionale: sito web o info extra
-    var status: String = "pending",   // "pending" | "active" | "resolved" | "expired"
+    var geohash: String = "",
+    var title: String = "",
+    var description: String = "",
+    var link: String = "",
+    var status: String = "pending",
     var createdBy: String = "",
-    var routeId: String? = null,      // se creato durante una registrazione
-    var createdAt: Long = System.currentTimeMillis(),
-    var updatedAt: Long = System.currentTimeMillis(),
-    var expiresAt: Long? = null       // null = non scade
+    var routeId: String? = null,
+    var createdAt: Long = 0L,
+    var updatedAt: Long = 0L,
+    var expiresAt: Long? = null
 )

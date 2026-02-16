@@ -1,6 +1,7 @@
 package it.bike4city.hub.tracking
 
 import android.location.Location
+import ch.hsr.geohash.GeoHash
 import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -140,12 +141,16 @@ object TrackRecorder {
         val lat = lastRawLat ?: s.points.lastOrNull()?.latitude ?: return
         val lon = lastRawLon ?: s.points.lastOrNull()?.longitude ?: return
 
+        // Generazione Geohash precisione 7 (~150m)
+        val geohash7 = GeoHash.withCharacterPrecision(lat, lon, 7).toBase32()
+
         val newSignal = MapSignal(
             id = UUID.randomUUID().toString(),
             kind = kind,
             category = category,
             lat = lat,
             lng = lon,
+            geohash = geohash7,
             title = title,
             description = description,
             createdAt = System.currentTimeMillis()

@@ -1,11 +1,13 @@
 package it.bike4city.hub.trackerpro
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.location.Location
 import android.os.IBinder
 import android.os.Looper
 import com.google.android.gms.location.*
+import it.bike4city.hub.maps.signals.MapSignal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import org.maplibre.android.geometry.LatLng
 
 class ProTrackingService : Service() {
 
@@ -99,6 +102,11 @@ class ProTrackingService : Service() {
         lastSavedLon = null
         lastSavedBearing = null
         smoother?.reset()
+
+        // ✅ Reset UI buffers
+        ProTrackingService._points.value = emptyList()
+        ProTrackingService._signals.value = emptyList()
+        ProTrackingService.lastRawLocation = null
 
         val trackName = name ?: "Track ${System.currentTimeMillis()}"
 
@@ -200,10 +208,15 @@ class ProTrackingService : Service() {
 
         updateState { it.copy(pointsCount = it.pointsCount + 1) }
 
+        // ✅ Manteniamo anche una lista punti in memoria per visualizzazione live.
+        // Nota: per tracce lunghissime potresti voler inviare update ogni N punti.
+        ProTrackingService.appendPointForUi(sLat, sLon)
+
         lastSavedLat = sLat
         lastSavedLon = sLon
         lastSavedBearing = if (loc.hasBearing()) loc.bearing else null
         lastRaw = loc
+        lastRawLocation = loc
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -229,6 +242,60 @@ class ProTrackingService : Service() {
 
         internal val _state = MutableStateFlow(ProTrackerState(activeMode = RecordingProfile.MIXED_ADAPTIVE.name))
         val state: StateFlow<ProTrackerState> = _state
+
+        // ✅ Punti per la UI (breadcrumb)
+        private val _points = MutableStateFlow<List<LatLng>>(emptyList())
+        val points: StateFlow<List<LatLng>> = _points
+
+        // ✅ Segnalazioni raccolte durante la registrazione
+        private val _signals = MutableStateFlow<List<MapSignal>>(emptyList())
+        val signals: StateFlow<List<MapSignal>> = _signals
+
+        // Ultima posizione grezza (per agganciare segnalazioni al punto reale)
+        @Volatile internal var lastRawLocation: Location? = null
+
+        /** Helper "anti-errori" per avviare/pausare/riprendere/fermare dal codice UI. */
+        fun start(ctx: Context, trackName: String? = null, cfg: ProTrackerConfig? = null) {
+            val i = Intent(ctx, ProTrackingService::class.java).setAction(ACTION_START)
+            if (trackName != null) i.putExtra(EXTRA_TRACK_NAME, trackName)
+            if (cfg != null) putConfig(i, cfg)
+            ctx.startForegroundService(i)
+        }
+
+        fun pause(ctx: Context) { ctx.startService(Intent(ctx, ProTrackingService::class.java).setAction(ACTION_PAUSE)) }
+        fun resume(ctx: Context) { ctx.startService(Intent(ctx, ProTrackingService::class.java).setAction(ACTION_RESUME)) }
+        fun stop(ctx: Context) { ctx.startService(Intent(ctx, ProTrackingService::class.java).setAction(ACTION_STOP)) }
+
+        /** Dopo Salva/Scarta: pulisce stato + punti + segnali. */
+        fun clear(ctx: Context) {
+            _points.value = emptyList()
+            _signals.value = emptyList()
+            lastRawLocation = null
+            ctx.startService(Intent(ctx, ProTrackingService::class.java).setAction(ACTION_CLEAR))
+        }
+
+        /** Aggiunge una segnalazione usando l'ultima posizione disponibile dal tracking. */
+        fun addSignal(kind: String, category: String, title: String, description: String = "") {
+            val loc = lastRawLocation ?: return
+            val s = MapSignal(
+                kind = kind,
+                category = category,
+                lat = loc.latitude,
+                lng = loc.longitude,
+                title = title,
+                description = description,
+                status = "pending"
+            )
+            _signals.value = _signals.value + s
+        }
+
+        internal fun appendPointForUi(lat: Double, lon: Double) {
+            val cur = _points.value
+            // Per sicurezza evitiamo di far crescere all'infinito (MVP: 20k punti max).
+            val next = if (cur.size >= 20_000) cur.drop(cur.size - 19_999) + LatLng(lat, lon)
+                       else cur + LatLng(lat, lon)
+            _points.value = next
+        }
 
         fun putConfig(intent: Intent, cfg: ProTrackerConfig) {
             intent.putExtra(EXTRA_CFG, ConfigParcel.from(cfg).toJson())

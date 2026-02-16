@@ -12,6 +12,7 @@ import android.os.IBinder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +67,7 @@ import it.bike4city.hub.data.FirebaseRepo
 import it.bike4city.hub.data.Route
 import it.bike4city.hub.gpx.GpxParser
 import it.bike4city.hub.location.LocationUpdates
-import it.bike4city.hub.maps.ThunderforestMapLibre
+import it.bike4city.hub.maps.engine.BikeMap
 import it.bike4city.hub.maps.signals.MapSignal
 import it.bike4city.hub.navigation.NavigationUpdate
 import it.bike4city.hub.navigation.TrackNavigationEngine
@@ -275,14 +276,11 @@ fun ViewRouteScreen(routeId: String) {
 
     LaunchedEffect(routeId) {
         route = FirebaseRepo.loadRoute(routeId)
-        // ✅ Carichiamo i segnali della traccia
-        FirebaseRepo.observeRouteSignals(routeId).collect { list ->
-            // Se sono il proprietario vedo tutto, altrimenti solo gli active
-            routeSignals = if (route?.ownerUid == currentUid) {
-                list.map { it.copy(status = "active") } // li forziamo active localmente per la mappa
-            } else {
-                list.filter { it.status == "active" }
-            }
+    }
+
+    LaunchedEffect(routeId) {
+        FirebaseRepo.observeRouteSignals(routeId).collect { signals ->
+            routeSignals = signals
         }
     }
 
@@ -312,7 +310,7 @@ fun ViewRouteScreen(routeId: String) {
                     mapLibrePoints.getOrNull(up.progressIndex)
                 }
 
-                ThunderforestMapLibre(
+                BikeMap(
                     modifier = Modifier.fillMaxSize(),
                     points = mapLibrePoints,
                     signals = routeSignals, // ✅ Passiamo i segnali della traccia
